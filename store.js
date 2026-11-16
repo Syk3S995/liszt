@@ -1,7 +1,8 @@
 // IndexedDB + memóriabeli állapot + szinkronsor + merge.
 import { splitQty, normUnit } from './logic.js';
 export const TABLES = ['Items', 'Categories', 'Stores', 'People', 'Views', 'Templates', 'TemplateItems', 'Products'];
-const DB_NAME = 'bevasarlo';
+// 'liszt': tiszta induláskor új név – a régi ('bevasarlo') helyi tár (demó / régi adat) így egyik eszközön sem töltődik be.
+const DB_NAME = 'liszt';
 const listeners = new Set();
 let db;
 export const state = Object.fromEntries(TABLES.map((t) => [t, new Map()]));
@@ -68,33 +69,6 @@ export async function save(t, row, by = '') {
   return r;
 }
 
-/** Mentés a szinkronsor érintése nélkül (demó mintaadatok). */
-export async function putLocal(t, raw) {
-  const r = fromWire(t, raw);
-  state[t].set(r.id, r);
-  const x = tx(t, 'readwrite');
-  x.objectStore(t).put(r);
-  await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
-  emit();
-}
-
-/** Sok sor mentése egy tranzakcióban, egyetlen újrarajzolással (pl. a terméklista első feltöltése). */
-export async function saveMany(t, rows, by = '') {
-  const now = Date.now();
-  const x = tx([t, 'queue'], 'readwrite');
-  for (const row of rows) {
-    const r = { ...row, updated_at: now };
-    if (t === 'Items') r.updated_by = by;
-    state[t].set(r.id, r);
-    const q = { key: t + '|' + r.id, t, r };
-    queue.set(q.key, q);
-    x.objectStore(t).put(r);
-    x.objectStore('queue').put(q);
-  }
-  await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
-  emit();
-}
-
 /** Puha törlés (tombstone). */
 export const remove = (t, row, by) => save(t, { ...row, deleted: true }, by);
 
@@ -133,21 +107,6 @@ export async function applyIncoming(data) {
   }
   await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
   if (changed) emit();
-}
-
-/** Megadott sorok eltávolítása a készülékről (és a szinkronsorból), feltöltés nélkül. ids: {Tábla: [id, …]} */
-export async function dropLocal(ids) {
-  const names = Object.keys(ids).filter((t) => TABLES.includes(t));
-  if (!names.length) return;
-  const x = tx([...names, 'queue'], 'readwrite');
-  for (const t of names) for (const id of ids[t]) {
-    state[t].delete(id);
-    x.objectStore(t).delete(id);
-    queue.delete(t + '|' + id);
-    x.objectStore('queue').delete(t + '|' + id);
-  }
-  await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
-  emit();
 }
 
 /** Minden helyi adat törlése (kijelentkezés + teljes újratöltés előtt). */

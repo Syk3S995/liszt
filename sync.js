@@ -142,5 +142,5 @@ export function startTriggers() {
 }
 
 export function initStatus() {
-  if (!backend.enabled()) setStatus('local', 'Helyi mód (demó)');
+  if (!backend.enabled()) setStatus('local', 'Helyi mód');
 }

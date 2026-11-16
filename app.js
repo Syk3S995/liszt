@@ -126,32 +126,7 @@ async function learnProduct(item, explicit) {
   }
 }
 
-/** Alap terméklista feltöltése – egyszer, és csak ha még üres (szinkron módban az első sikeres szinkron után). */
-let seedingCatalog = false;
-async function maybeSeedCatalog() {
-  if (seedingCatalog || store.getMeta('catalogSeeded', false)) return;
-  seedingCatalog = true;
-  try {
-    if (!store.list('Products').length) {
-      const { DEFAULT_PRODUCTS } = await import('./catalog.js');
-      const catIds = new Set(store.list('Categories').map((c) => c.id));
-      const base = (n) => String(n).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-      // determinisztikus id: ha két eszköz egyszerre töltene fel, ugyanazokat a sorokat írják (nincs duplikátum)
-      const rows = DEFAULT_PRODUCTS.map(([name, cat, unit, kw]) => ({ id: 'p-' + base(name), name, category: catIds.has(cat) ? cat : '', unit, stores: [], keywords: kw, deleted: false }));
-      if (backend.enabled()) { await store.saveMany('Products', rows, authEmail()); sync.localChanged(); }
-      else for (const r of rows) await store.putLocal('Products', r);
-    }
-    await store.setMeta('catalogSeeded', true);
-  } finally { seedingCatalog = false; }
-}
-
-// ---- Betöltés ----
-async function seedIfEmpty() {
-  if (backend.enabled() || store.list('Items').length || store.list('Stores').length || store.list('Categories').length) return;
-  const seed = await (await fetch('seed.json')).json();
-  const x = Date.now();
-  for (const t of store.TABLES) for (const r of seed[t] || []) await store.putLocal(t, { ...r, updated_at: x });
-}
+// Az alapadatot (kategóriák + terméklista) a szerver írja a Sheetbe (GAS setup / resetAll) – az app semmit nem tölt fel magától.
 
 // ---- Render ----
 function render() {
@@ -408,16 +383,13 @@ function accountView() {
           fact('Feltöltésre vár', queue.length ? queue.length + ' változás' : 'semmi – minden fent van', queue.length ? 'warn' : ''),
           info.lastError && info.lastError.at > info.lastOk ? fact('Utolsó hiba', fmtWhen(info.lastError.at) + ' – ' + info.lastError.text, 'bad') : null,
           fact('Bejelentkezés érvényes', auth ? fmtWhen(auth.exp, false) + '-ig (használat közben magától megújul)' : '–'))
-          : h('p', { class: 'muted small' }, 'Helyi (demó) mód: az adatok csak ebben a böngészőben vannak, szinkron nincs.'),
+          : h('p', { class: 'muted small' }, 'Helyi mód: nincs beállított szerver, az adatok csak ebben a böngészőben vannak.'),
         h('div', { class: 'actions', style: 'justify-content:flex-start' },
           backend.enabled() ? [
             h('button', { class: 'btn primary', disabled: info.running, onclick: () => sync.runSync({ manual: true }) }, icon('sync', 18), info.running ? 'Szinkron…' : 'Szinkron most'),
             h('button', { class: 'btn', onclick: () => sync.runSync({ full: true }) }, 'Teljes újratöltés'),
             h('button', { class: 'btn', onclick: logout }, 'Kijelentkezés'),
-          ] : h('button', { class: 'btn', onclick: async () => {
-            if (!confirm('Minden helyi adat törlése és a mintaadatok visszaállítása?')) return;
-            await store.wipeData(); await store.delMeta('catalogSeeded'); await seedIfEmpty(); await maybeSeedCatalog();
-          } }, 'Demó adatok visszaállítása')))),
+          ] : null))),
     // feltöltésre váró változások részletesen (ha van)
     backend.enabled() && queue.length ? h('section', { class: 'sec' },
       h('div', { class: 'sechead' }, h('span', {}, 'Feltöltésre vár'), h('span', { class: 'count' }, queue.length)),
@@ -1443,27 +1415,12 @@ function openMenu() { go('account'); }
 
 /** Minden felhasználóhoz kötött helyi nyom törlése (kijelentkezés / felhasználóváltás előtt). */
 async function clearUserTraces() {
-  for (const k of ['auth', 'owner', 'catalogSeeded', 'syncLog', 'lastSyncOk', 'lastSyncError', 'dataVersion']) await store.delMeta(k);
+  for (const k of ['auth', 'owner', 'syncLog', 'lastSyncOk', 'lastSyncError', 'dataVersion']) await store.delMeta(k);
   await store.setMeta('since', 0);
 }
 
-/** A helyi adatok gazdája: akinek a belépésével kerültek ide (régi telepítésnél a bejelentkezett felhasználó). */
+/** A helyi adatok gazdája: akinek a belépésével kerültek ide. */
 const dataOwner = () => store.getMeta('owner', null) || (sync.getAuth() || {}).email || null;
-
-// A demó mintaadatok azonosítói (seed.json). Régebbi verzió szinkron módban is betölthette / feltölthette őket.
-const DEMO_IDS = { Stores: ['lidl', 'tesco', 'dm'], People: ['nagyi', 'hetvegi-haz'], Views: ['lidl-gyors', 'tesco-nagy', 'dm-gyors'],
-  Items: ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7'], Templates: ['havi', 'hetvegi-alap'],
-  TemplateItems: ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10'] };
-
-/**
- * Egyszeri takarítás szinkron módban: a készüléken maradt demó sorok és a még fel nem küldött demó változások törlése
- * (különben egy szerkesztéskor felkerülnének a Sheetbe). A szerverről a GAS purgeDemo() függvénye takarít.
- */
-async function purgeLocalDemo() {
-  if (!backend.enabled() || CONFIG.MOCK_AUTH || store.getMeta('demoPurged', false)) return;   // a mock szerver épp a demó adatokkal fut
-  await store.dropLocal(DEMO_IDS);
-  await store.setMeta('demoPurged', true);
-}
 
 async function logout() {
   if (store.pendingCount() && !confirm(`${store.pendingCount()} még el nem küldött változás elvész. Biztosan kijelentkezel?`)) return;
@@ -1504,8 +1461,8 @@ async function doLogin(idToken) {
       msg.textContent = { not_allowed: 'Ez az e-mail-cím nincs engedélyezve.', invalid_token: 'Érvénytelen bejelentkezés.', wrong_client: 'Hibás Client ID beállítás.' }[res.error] || 'Hiba: ' + res.error;
       return;
     }
-    // Más felhasználó adata – vagy gazda nélküli (pl. demó módban betöltött mintaadat) – nem keveredhet az övével,
-    // és nem kerülhet fel a szerverre: belépés előtt töröljük. (Ugyanaz a felhasználó újra belépve megtartja a sorát.)
+    // Más felhasználó (vagy gazda nélküli) helyi adata nem keveredhet az övével, és nem kerülhet fel a szerverre:
+    // belépés előtt töröljük. (Ugyanaz a felhasználó újra belépve megtartja a még el nem küldött változásait.)
     if (dataOwner() !== res.email) { await store.wipeData(); await clearUserTraces(); }
     await store.setMeta('owner', res.email);
     await sync.setAuth({ token: res.token, exp: res.exp, email: res.email, personId: res.personId, name: res.name });
@@ -1519,17 +1476,12 @@ async function doLogin(idToken) {
 async function main() {
   await store.init();
   sync.initStatus();
-  await seedIfEmpty();
-  await purgeLocalDemo();
-  if (!store.getMeta('owner', null) && sync.getAuth()) await store.setMeta('owner', sync.getAuth().email);   // régebbi telepítés
-  // gazda nélküli helyi adattal (pl. demóból maradt) nem lehet belépés nélkül továbbmenni
+  // belépés nélkül csak a saját, már letöltött adattal lehet (offline) továbbmenni
   needLogin = backend.enabled() && !sync.getAuth() && (!dataOwner() || !store.list('Items').length);
   store.onChange(render);
-  sync.onStatus((st) => {
+  sync.onStatus(() => {
     const q = document.activeElement; if (!(q && q.tagName === 'INPUT' && q.id === 'q' && q.value)) render();
-    if (st.kind === 'ok') maybeSeedCatalog();   // szinkron módban csak az első sikeres szinkron után (ha a szerveren már van, nem tölt)
   });
-  if (!backend.enabled()) await maybeSeedCatalog();
   render();
   sync.startTriggers();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
