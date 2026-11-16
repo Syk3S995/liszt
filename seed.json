@@ -1,0 +1,621 @@
+{
+    "Categories":  [
+                       {
+                           "id":  "zoldseg-gyumolcs",
+                           "name":  "Zöldség-gyümölcs",
+                           "color":  "#43a047",
+                           "sort":  10,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "pekaru",
+                           "name":  "Pékáru",
+                           "color":  "#c98a3b",
+                           "sort":  20,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "tejtermek",
+                           "name":  "Tejtermék",
+                           "color":  "#4a90c2",
+                           "sort":  30,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "hus",
+                           "name":  "Hús",
+                           "color":  "#c2554d",
+                           "sort":  40,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "fagyasztott",
+                           "name":  "Fagyasztott",
+                           "color":  "#5bb5c9",
+                           "sort":  50,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "szarazaru",
+                           "name":  "Szárazáru",
+                           "color":  "#a68a64",
+                           "sort":  60,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "ital",
+                           "name":  "Ital",
+                           "color":  "#6a7fd1",
+                           "sort":  70,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "haztartas",
+                           "name":  "Háztartás",
+                           "color":  "#7d8a7f",
+                           "sort":  80,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "drogeria",
+                           "name":  "Drogéria",
+                           "color":  "#b05fa8",
+                           "sort":  90,
+                           "updated_at":  1,
+                           "deleted":  false
+                       },
+                       {
+                           "id":  "egyeb",
+                           "name":  "Egyéb",
+                           "color":  "#8d958e",
+                           "sort":  100,
+                           "updated_at":  1,
+                           "deleted":  false
+                       }
+                   ],
+    "Stores":  [
+                   {
+                       "id":  "lidl",
+                       "name":  "Lidl",
+                       "color":  "#0050aa",
+                       "sort":  1,
+                       "updated_at":  1,
+                       "deleted":  false
+                   },
+                   {
+                       "id":  "tesco",
+                       "name":  "Tesco",
+                       "color":  "#e1251b",
+                       "sort":  2,
+                       "updated_at":  1,
+                       "deleted":  false
+                   },
+                   {
+                       "id":  "dm",
+                       "name":  "DM",
+                       "color":  "#d4007a",
+                       "sort":  3,
+                       "updated_at":  1,
+                       "deleted":  false
+                   }
+               ],
+    "People":  [
+                   {
+                       "id":  "en",
+                       "name":  "Én",
+                       "email":  "",
+                       "color":  "#2e7d32",
+                       "icon":  "user",
+                       "sort":  10,
+                       "updated_at":  1,
+                       "deleted":  false
+                   },
+                   {
+                       "id":  "nagyi",
+                       "name":  "Nagyi",
+                       "email":  "",
+                       "color":  "#b05fa8",
+                       "icon":  "heart",
+                       "sort":  20,
+                       "updated_at":  1,
+                       "deleted":  false
+                   },
+                   {
+                       "id":  "hetvegi-haz",
+                       "name":  "Hétvégi ház",
+                       "email":  "",
+                       "color":  "#ef8a2c",
+                       "icon":  "cabin",
+                       "sort":  30,
+                       "updated_at":  1,
+                       "deleted":  false
+                   }
+               ],
+    "Views":  [
+                  {
+                      "id":  "lidl-gyors",
+                      "name":  "Lidl gyors",
+                      "stores":  [
+                                     "lidl"
+                                 ],
+                      "include_unassigned":  false,
+                      "show_others":  false,
+                      "show_people":  true,
+                      "sort":  1,
+                      "updated_at":  1,
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "tesco-nagy",
+                      "name":  "Tesco nagybevásárlás",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "include_unassigned":  true,
+                      "show_others":  true,
+                      "show_people":  true,
+                      "sort":  2,
+                      "updated_at":  1,
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "dm-gyors",
+                      "name":  "DM",
+                      "stores":  [
+                                     "dm"
+                                 ],
+                      "include_unassigned":  false,
+                      "show_others":  false,
+                      "show_people":  true,
+                      "sort":  3,
+                      "updated_at":  1,
+                      "deleted":  false
+                  }
+              ],
+    "Items":  [
+                  {
+                      "id":  "s1",
+                      "name":  "Tej",
+                      "qty":  "2 l",
+                      "note":  "",
+                      "category":  "tejtermek",
+                      "stores":  [
+                                     "lidl"
+                                 ],
+                      "for":  "",
+                      "urgent":  true,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s2",
+                      "name":  "Kenyér",
+                      "qty":  "1",
+                      "note":  "",
+                      "category":  "pekaru",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s3",
+                      "name":  "Alma",
+                      "qty":  "1 kg",
+                      "note":  "",
+                      "category":  "zoldseg-gyumolcs",
+                      "stores":  [
+
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s4",
+                      "name":  "Csirkemell",
+                      "qty":  "1/2 kg",
+                      "note":  "",
+                      "category":  "hus",
+                      "stores":  [
+                                     "lidl"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s5",
+                      "name":  "Mosogatószer",
+                      "qty":  "",
+                      "note":  "",
+                      "category":  "haztartas",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s6",
+                      "name":  "Fogkrém",
+                      "qty":  "",
+                      "note":  "",
+                      "category":  "drogeria",
+                      "stores":  [
+                                     "dm"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s7",
+                      "name":  "Tojás",
+                      "qty":  "10 db",
+                      "note":  "M-es",
+                      "category":  "tejtermek",
+                      "stores":  [
+                                     "tesco",
+                                     "lidl"
+                                 ],
+                      "for":  "nagyi",
+                      "urgent":  false,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "s8",
+                      "name":  "Szappan",
+                      "qty":  "",
+                      "note":  "",
+                      "category":  "drogeria",
+                      "stores":  [
+                                     "dm"
+                                 ],
+                      "for":  "nagyi",
+                      "urgent":  true,
+                      "checked":  false,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false
+                  },
+                  {
+                      "id":  "h1",
+                      "name":  "Tej",
+                      "qty":  "2",
+                      "unit":  "l",
+                      "note":  "",
+                      "category":  "tejtermek",
+                      "stores":  [
+                                     "lidl"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794693918703,
+                      "bought_store":  "lidl"
+                  },
+                  {
+                      "id":  "h2",
+                      "name":  "Kenyér",
+                      "qty":  "1",
+                      "unit":  "db",
+                      "note":  "",
+                      "category":  "pekaru",
+                      "stores":  [
+                                     "lidl"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794693918703,
+                      "bought_store":  "lidl"
+                  },
+                  {
+                      "id":  "h3",
+                      "name":  "Banán",
+                      "qty":  "1",
+                      "unit":  "kg",
+                      "note":  "",
+                      "category":  "zoldseg-gyumolcs",
+                      "stores":  [
+                                     "lidl"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794693918703,
+                      "bought_store":  "lidl"
+                  },
+                  {
+                      "id":  "h4",
+                      "name":  "Tej",
+                      "qty":  "2",
+                      "unit":  "l",
+                      "note":  "",
+                      "category":  "tejtermek",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794348318703,
+                      "bought_store":  "tesco"
+                  },
+                  {
+                      "id":  "h5",
+                      "name":  "Joghurt",
+                      "qty":  "4",
+                      "unit":  "db",
+                      "note":  "",
+                      "category":  "tejtermek",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794348318703,
+                      "bought_store":  "tesco"
+                  },
+                  {
+                      "id":  "h6",
+                      "name":  "Banán",
+                      "qty":  "1",
+                      "unit":  "kg",
+                      "note":  "",
+                      "category":  "zoldseg-gyumolcs",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "for":  "",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794348318703,
+                      "bought_store":  "tesco"
+                  },
+                  {
+                      "id":  "h7",
+                      "name":  "Tűzifa-gyújtós",
+                      "qty":  "1",
+                      "unit":  "csomag",
+                      "note":  "",
+                      "category":  "haztartas",
+                      "stores":  [
+                                     "tesco"
+                                 ],
+                      "for":  "hetvegi-haz",
+                      "urgent":  false,
+                      "checked":  true,
+                      "updated_at":  1,
+                      "updated_by":  "",
+                      "deleted":  false,
+                      "bought_at":  1794348318703,
+                      "bought_store":  "tesco"
+                  }
+              ],
+    "Templates":  [
+                      {
+                          "id":  "havi",
+                          "name":  "Havi nagybevásárlás",
+                          "color":  "#4a90c2",
+                          "icon":  "cart",
+                          "for":  "",
+                          "sort":  10,
+                          "updated_at":  1,
+                          "deleted":  false
+                      },
+                      {
+                          "id":  "hetvegi-alap",
+                          "name":  "Hétvégi ház alapcsomag",
+                          "color":  "#ef8a2c",
+                          "icon":  "cabin",
+                          "for":  "hetvegi-haz",
+                          "sort":  20,
+                          "updated_at":  1,
+                          "deleted":  false
+                      }
+                  ],
+    "TemplateItems":  [
+                          {
+                              "id":  "t1",
+                              "template":  "havi",
+                              "name":  "Liszt",
+                              "qty":  "2",
+                              "unit":  "kg",
+                              "category":  "szarazaru",
+                              "stores":  [
+                                             "lidl"
+                                         ],
+                              "for":  "",
+                              "sort":  10,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t2",
+                              "template":  "havi",
+                              "name":  "Cukor",
+                              "qty":  "1",
+                              "unit":  "kg",
+                              "category":  "szarazaru",
+                              "stores":  [
+                                             "lidl"
+                                         ],
+                              "for":  "",
+                              "sort":  20,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t3",
+                              "template":  "havi",
+                              "name":  "Rizs",
+                              "qty":  "1",
+                              "unit":  "kg",
+                              "category":  "szarazaru",
+                              "stores":  [
+
+                                         ],
+                              "for":  "",
+                              "sort":  30,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t4",
+                              "template":  "havi",
+                              "name":  "Étolaj",
+                              "qty":  "1",
+                              "unit":  "l",
+                              "category":  "szarazaru",
+                              "stores":  [
+
+                                         ],
+                              "for":  "",
+                              "sort":  40,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t5",
+                              "template":  "havi",
+                              "name":  "Mosószer",
+                              "qty":  "1",
+                              "unit":  "doboz",
+                              "category":  "haztartas",
+                              "stores":  [
+                                             "tesco"
+                                         ],
+                              "for":  "",
+                              "sort":  50,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t6",
+                              "template":  "havi",
+                              "name":  "WC-papír",
+                              "qty":  "1",
+                              "unit":  "csomag",
+                              "category":  "haztartas",
+                              "stores":  [
+
+                                         ],
+                              "for":  "",
+                              "sort":  60,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t7",
+                              "template":  "hetvegi-alap",
+                              "name":  "Tűzifa-gyújtós",
+                              "qty":  "1",
+                              "unit":  "csomag",
+                              "category":  "haztartas",
+                              "stores":  [
+                                             "tesco"
+                                         ],
+                              "for":  "",
+                              "sort":  70,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t8",
+                              "template":  "hetvegi-alap",
+                              "name":  "Ásványvíz",
+                              "qty":  "6",
+                              "unit":  "l",
+                              "category":  "ital",
+                              "stores":  [
+
+                                         ],
+                              "for":  "",
+                              "sort":  80,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t9",
+                              "template":  "hetvegi-alap",
+                              "name":  "Kávé",
+                              "qty":  "1",
+                              "unit":  "csomag",
+                              "category":  "szarazaru",
+                              "stores":  [
+
+                                         ],
+                              "for":  "",
+                              "sort":  90,
+                              "updated_at":  1,
+                              "deleted":  false
+                          },
+                          {
+                              "id":  "t10",
+                              "template":  "hetvegi-alap",
+                              "name":  "WC-papír",
+                              "qty":  "1",
+                              "unit":  "csomag",
+                              "category":  "haztartas",
+                              "stores":  [
+
+                                         ],
+                              "for":  "",
+                              "sort":  100,
+                              "updated_at":  1,
+                              "deleted":  false
+                          }
+                      ]
+}
