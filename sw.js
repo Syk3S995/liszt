@@ -1,6 +1,6 @@
 ﻿// App shell cache: stale-while-revalidate. API- és Google-kéréseket nem cache-eljük.
 // (Verzióemelést a CACHE név átírásával – szerkesztővel, ne PowerShell Get/Set-Content-tel, mert az elrontja az ékezeteket.)
-const CACHE = 'bevasarlo-v14';
+const CACHE = 'bevasarlo-v17';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'store.js', 'sync.js', 'backend.js', 'icons.js', 'catalog.js', 'theme.js',
   'logic.js', 'config.js', 'seed.json', 'manifest.webmanifest', 'icons/logo.svg', 'icons/icon-192.png','icons/icon-512.png'];
 

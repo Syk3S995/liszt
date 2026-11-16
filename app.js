@@ -45,7 +45,6 @@ function toast(msg, action) {
   let t = document.getElementById('toast');
   if (!t) { t = h('div', { id: 'toast', role: 'status', 'aria-live': 'polite' }); document.body.append(t); }
   t.replaceChildren(...[h('span', {}, msg), action ? h('button', { class: 'toastbtn', onclick: () => { t.classList.remove('show'); action.fn(); } }, action.label) : null].filter(Boolean));
-  t.classList.toggle('has-action', !!action);
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), action ? 6000 : 2200);
@@ -156,6 +155,7 @@ async function seedIfEmpty() {
 
 // ---- Render ----
 function render() {
+  closeNavPop();   // újrarajzoláskor a felugró menü (a body-ban lóg) ne maradjon árván nyitva
   if (needLogin) return renderLogin();
   const view = currentView();
   const sec = sectionsFor(view);
@@ -392,7 +392,7 @@ function accountView() {
   const move = (i, j) => { const keys = order.map((n) => n.key); [keys[i], keys[j]] = [keys[j], keys[i]]; setNavOrder(keys); render(); };
   const theme = window.BevTheme ? window.BevTheme.get() : 'auto';
   const fact = (k, v, cls) => [h('dt', {}, k), h('dd', { class: cls || '' }, v)];
-  const KIND = { ok: 'Sikeres', error: 'Hiba', auth: 'Bejelentkezés kell', offline: 'Offline' };
+  const KIND = { ok: 'Sikeres', same: 'Változatlan', error: 'Hiba', auth: 'Bejelentkezés kell', offline: 'Offline' };
   return h('div', {},
     h('div', { class: 'pagehead desktop-only' }, h('h1', {}, 'Fiók')),
     h('section', { class: 'sec' },
@@ -411,7 +411,7 @@ function accountView() {
           : h('p', { class: 'muted small' }, 'Helyi (demó) mód: az adatok csak ebben a böngészőben vannak, szinkron nincs.'),
         h('div', { class: 'actions', style: 'justify-content:flex-start' },
           backend.enabled() ? [
-            h('button', { class: 'btn primary', disabled: info.running, onclick: () => sync.runSync() }, icon('sync', 18), info.running ? 'Szinkron…' : 'Szinkron most'),
+            h('button', { class: 'btn primary', disabled: info.running, onclick: () => sync.runSync({ manual: true }) }, icon('sync', 18), info.running ? 'Szinkron…' : 'Szinkron most'),
             h('button', { class: 'btn', onclick: () => sync.runSync({ full: true }) }, 'Teljes újratöltés'),
             h('button', { class: 'btn', onclick: logout }, 'Kijelentkezés'),
           ] : h('button', { class: 'btn', onclick: async () => {
@@ -447,7 +447,7 @@ function accountView() {
 function syncLogSection(info, KIND) {
   if (!info.log.length) return null;
   const secs = (ms) => (ms / 1000).toLocaleString('hu-HU', { maximumFractionDigits: 1 }) + ' mp';
-  const okRuns = info.log.filter((e) => e.kind === 'ok');
+  const okRuns = info.log.filter((e) => e.kind === 'ok' || e.kind === 'same');
   const avg = okRuns.length ? secs(okRuns.reduce((s, e) => s + e.ms, 0) / okRuns.length) : '–';
   return h('section', { class: 'sec' },
     h('div', { class: 'sechead' }, h('span', {}, 'Szinkron napló'), h('span', { class: 'count' }, info.log.length)),
@@ -456,7 +456,7 @@ function syncLogSection(info, KIND) {
       h('thead', {}, h('tr', {}, ['Időpont', 'Eredmény', 'Küldött', 'Kapott', 'Idő'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
       h('tbody', {}, info.log.map((e) => h('tr', {},
         h('td', { class: 'nowrap' }, fmtWhen(e.at, false)),
-        h('td', { class: e.kind === 'ok' ? '' : 'bad' }, (KIND[e.kind] || e.kind) + (e.full ? ' (teljes)' : '') + (e.err ? ' – ' + e.err : '')),
+        h('td', { class: e.kind === 'ok' || e.kind === 'same' ? '' : 'bad' }, (KIND[e.kind] || e.kind) + (e.full ? ' (teljes)' : '') + (e.err ? ' – ' + e.err : '')),
         h('td', { class: 'num' }, e.sent), h('td', { class: 'num' }, e.recv), h('td', { class: 'num' }, secs(e.ms))))))));
 }
 
@@ -776,7 +776,7 @@ function qtyControl(qty, unit) {
     return b;
   });
   const node = h('div', { class: 'qtyctl' }, h('div', { class: 'stepper' }, minus, val, plus), h('div', { class: 'units' }, unitBtns));
-  return { node, get: () => ({ qty: read(), unit: read() ? u : u }), focus: () => val.focus() };
+  return { node, get: () => ({ qty: read(), unit: u }) };
 }
 
 /** Gyors mennyiség-állítás a listából. */
@@ -1441,12 +1441,34 @@ async function deleteRow(tab, row) {
 /** A szinkron-jelző és a monogram a Fiók oldalt nyitja (szinkron, kijelentkezés, menü sorrendje). */
 function openMenu() { go('account'); }
 
+/** Minden felhasználóhoz kötött helyi nyom törlése (kijelentkezés / felhasználóváltás előtt). */
+async function clearUserTraces() {
+  for (const k of ['auth', 'owner', 'catalogSeeded', 'syncLog', 'lastSyncOk', 'lastSyncError', 'dataVersion']) await store.delMeta(k);
+  await store.setMeta('since', 0);
+}
+
+/** A helyi adatok gazdája: akinek a belépésével kerültek ide (régi telepítésnél a bejelentkezett felhasználó). */
+const dataOwner = () => store.getMeta('owner', null) || (sync.getAuth() || {}).email || null;
+
+// A demó mintaadatok azonosítói (seed.json). Régebbi verzió szinkron módban is betölthette / feltölthette őket.
+const DEMO_IDS = { Stores: ['lidl', 'tesco', 'dm'], People: ['nagyi', 'hetvegi-haz'], Views: ['lidl-gyors', 'tesco-nagy', 'dm-gyors'],
+  Items: ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7'], Templates: ['havi', 'hetvegi-alap'],
+  TemplateItems: ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10'] };
+
+/**
+ * Egyszeri takarítás szinkron módban: a készüléken maradt demó sorok és a még fel nem küldött demó változások törlése
+ * (különben egy szerkesztéskor felkerülnének a Sheetbe). A szerverről a GAS purgeDemo() függvénye takarít.
+ */
+async function purgeLocalDemo() {
+  if (!backend.enabled() || CONFIG.MOCK_AUTH || store.getMeta('demoPurged', false)) return;   // a mock szerver épp a demó adatokkal fut
+  await store.dropLocal(DEMO_IDS);
+  await store.setMeta('demoPurged', true);
+}
+
 async function logout() {
   if (store.pendingCount() && !confirm(`${store.pendingCount()} még el nem küldött változás elvész. Biztosan kijelentkezel?`)) return;
   await store.wipeData();
-  await store.delMeta('auth');
-  await store.delMeta('catalogSeeded');
-  await store.setMeta('since', 0);
+  await clearUserTraces();
   location.reload();
 }
 
@@ -1455,7 +1477,7 @@ function renderLogin() {
   const box = h('div', { id: 'gbtn', style: 'display:flex;justify-content:center' });
   $app.replaceChildren(h('div', { class: 'login' }, h('img', { class: 'logo-lg', src: 'icons/logo.svg', alt: '' }), h('h1', {}, 'Liszt'), h('p', { class: 'muted' }, 'Jelentkezz be a szinkronhoz.'), box,
     h('p', { class: 'muted', id: 'loginmsg' }),
-    sync.getAuth() || !store.list('Items').length ? null : h('button', { class: 'btn', onclick: () => { needLogin = false; render(); } }, 'Offline folytatás')));
+    sync.getAuth() || !dataOwner() || !store.list('Items').length ? null : h('button', { class: 'btn', onclick: () => { needLogin = false; render(); } }, 'Offline folytatás')));
   if (CONFIG.MOCK_AUTH) {
     box.append(h('button', { class: 'btn primary', onclick: () => doLogin('mock:' + (prompt('Mock személy id (pl. en, nagyi):', 'en') || 'en')) }, 'Belépés (mock)'));
   } else loadGsi(box);
@@ -1482,8 +1504,10 @@ async function doLogin(idToken) {
       msg.textContent = { not_allowed: 'Ez az e-mail-cím nincs engedélyezve.', invalid_token: 'Érvénytelen bejelentkezés.', wrong_client: 'Hibás Client ID beállítás.' }[res.error] || 'Hiba: ' + res.error;
       return;
     }
-    const prev = sync.getAuth();
-    if (prev && prev.email !== res.email) await store.wipeData(); // másik felhasználó: ne keveredjen
+    // Más felhasználó adata – vagy gazda nélküli (pl. demó módban betöltött mintaadat) – nem keveredhet az övével,
+    // és nem kerülhet fel a szerverre: belépés előtt töröljük. (Ugyanaz a felhasználó újra belépve megtartja a sorát.)
+    if (dataOwner() !== res.email) { await store.wipeData(); await clearUserTraces(); }
+    await store.setMeta('owner', res.email);
     await sync.setAuth({ token: res.token, exp: res.exp, email: res.email, personId: res.personId, name: res.name });
     needLogin = false;
     render();
@@ -1496,7 +1520,10 @@ async function main() {
   await store.init();
   sync.initStatus();
   await seedIfEmpty();
-  needLogin = backend.enabled() && !sync.getAuth() && !store.list('Items').length;
+  await purgeLocalDemo();
+  if (!store.getMeta('owner', null) && sync.getAuth()) await store.setMeta('owner', sync.getAuth().email);   // régebbi telepítés
+  // gazda nélküli helyi adattal (pl. demóból maradt) nem lehet belépés nélkül továbbmenni
+  needLogin = backend.enabled() && !sync.getAuth() && (!dataOwner() || !store.list('Items').length);
   store.onChange(render);
   sync.onStatus((st) => {
     const q = document.activeElement; if (!(q && q.tagName === 'INPUT' && q.id === 'q' && q.value)) render();

@@ -19,5 +19,8 @@ export const enabled = () => !!CONFIG.API_URL;
 /** -> {ok, token, exp, email, personId, name} | {ok:false, error} */
 export const login = (idToken) => post({ action: 'login', idToken });
 
-/** -> {ok, serverTime, data:{Items,Stores,People,Views}} | {ok:false, error:'auth'} */
-export const sync = (token, since, changes) => post({ action: 'sync', token, since, changes });
+/**
+ * -> {ok, serverTime, version, data:{Items,…}} | {ok, unchanged:true, version} | {ok:false, error:'auth'}
+ * version: a készülék utolsó adatverziója – ha a szerveren azóta nem változott semmi, nem jön le adat.
+ */
+export const sync = (token, since, changes, version = '') => post({ action: 'sync', token, since, changes, version });

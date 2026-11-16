@@ -113,7 +113,9 @@ export async function clearQueue(sent) {
 
 /** Szerverről érkező rekordok beolvasása (nem kerülnek a sorba). */
 export async function applyIncoming(data) {
+  if (!TABLES.some((t) => (data[t] || []).length)) return;   // nincs új adat: ne rajzoljon újra
   const x = tx(TABLES, 'readwrite');
+  let changed = 0;
   for (const t of TABLES) {
     for (const wire of data[t] || []) {
       const row = fromWire(t, wire);
@@ -122,9 +124,27 @@ export async function applyIncoming(data) {
       if (queued && queued.r.updated_at > row.updated_at) continue; // újabb helyi változás vár
       const local = state[t].get(row.id);
       if (local && local.updated_at > row.updated_at) continue;
+      // az átfedési ablak miatt újra megkapott, már meglévő sor: nem változás
+      if (local && local.updated_at === row.updated_at && JSON.stringify(toWire(t, local)) === JSON.stringify(toWire(t, row))) continue;
       state[t].set(row.id, row);
       x.objectStore(t).put(row);
+      changed++;
     }
+  }
+  await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
+  if (changed) emit();
+}
+
+/** Megadott sorok eltávolítása a készülékről (és a szinkronsorból), feltöltés nélkül. ids: {Tábla: [id, …]} */
+export async function dropLocal(ids) {
+  const names = Object.keys(ids).filter((t) => TABLES.includes(t));
+  if (!names.length) return;
+  const x = tx([...names, 'queue'], 'readwrite');
+  for (const t of names) for (const id of ids[t]) {
+    state[t].delete(id);
+    x.objectStore(t).delete(id);
+    queue.delete(t + '|' + id);
+    x.objectStore('queue').delete(t + '|' + id);
   }
   await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
   emit();
