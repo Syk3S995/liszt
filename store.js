@@ -1,6 +1,6 @@
 // IndexedDB + memóriabeli állapot + szinkronsor + merge.
 import { splitQty, normUnit } from './logic.js';
-export const TABLES = ['Items', 'Categories', 'Stores', 'People', 'Views', 'Templates', 'TemplateItems', 'Products'];
+export const TABLES = ['Items', 'Categories', 'Stores', 'People', 'Views', 'Templates', 'TemplateItems', 'Products', 'Units'];
 // 'liszt': tiszta induláskor új név – a régi ('bevasarlo') helyi tár (demó / régi adat) így egyik eszközön sem töltődik be.
 const DB_NAME = 'liszt';
 const listeners = new Set();
@@ -19,7 +19,7 @@ function tx(names, mode = 'readonly') { return db.transaction(names, mode); }
 
 export async function init() {
   db = await new Promise((resolve, reject) => {
-    const o = indexedDB.open(DB_NAME, 4);
+    const o = indexedDB.open(DB_NAME, 5);
     o.onupgradeneeded = () => {
       const d = o.result;
       for (const t of TABLES) if (!d.objectStoreNames.contains(t)) d.createObjectStore(t, { keyPath: 'id' });
@@ -124,6 +124,8 @@ export async function wipeData(keepQueue = false) {
 const bool = (v) => v === true || v === 1 || /^(true|1|igaz)$/i.test(String(v));
 const csv = (v) => (Array.isArray(v) ? v : String(v ?? '').split(',').map((s) => s.trim()).filter(Boolean));
 const str = (v) => (v == null ? '' : String(v));
+// ismert egység: a kanonikus név; ismeretlen (pl. már törölt egyéni egység): marad a szöveg, hogy ne vesszen el
+const unitOf = (u) => normUnit(u) || str(u).trim();
 
 export function fromWire(t, w) {
   const r = { ...w };
@@ -135,7 +137,7 @@ export function fromWire(t, w) {
     r.category = str(w.category); r.for = str(w.for); r.updated_by = str(w.updated_by);
     r.stores = csv(w.stores); r.urgent = bool(w.urgent); r.checked = bool(w.checked);
     // mennyiség: szám + egység (a régi „2 l” formát itt bontjuk szét)
-    const q = splitQty(w.qty, normUnit(w.unit));
+    const q = splitQty(w.qty, unitOf(w.unit));
     r.qty = q.qty; r.unit = q.unit;
     r.bought_at = Number(w.bought_at) || 0; r.bought_store = str(w.bought_store);
   } else if (t === 'Stores' || t === 'Categories') {
@@ -145,13 +147,15 @@ export function fromWire(t, w) {
   } else if (t === 'People') {
     r.name = str(w.name); r.email = str(w.email); r.color = str(w.color); r.icon = str(w.icon); r.sort = Number(w.sort) || 0; r.keywords = str(w.keywords);
   } else if (t === 'Products') {
-    r.name = str(w.name); r.category = str(w.category); r.unit = normUnit(w.unit); r.stores = csv(w.stores); r.keywords = str(w.keywords);
+    r.name = str(w.name); r.category = str(w.category); r.unit = unitOf(w.unit); r.stores = csv(w.stores); r.keywords = str(w.keywords);
+  } else if (t === 'Units') {
+    r.name = str(w.name); r.step = Number(w.step) > 0 ? Number(w.step) : 1; r.sort = Number(w.sort) || 0;
   } else if (t === 'Templates') {
     r.name = str(w.name); r.color = str(w.color); r.icon = str(w.icon); r.for = str(w.for); r.sort = Number(w.sort) || 0;
   } else if (t === 'TemplateItems') {
     r.template = str(w.template); r.name = str(w.name); r.category = str(w.category); r.for = str(w.for);
     r.stores = csv(w.stores); r.sort = Number(w.sort) || 0;
-    const q = splitQty(w.qty, normUnit(w.unit));
+    const q = splitQty(w.qty, unitOf(w.unit));
     r.qty = q.qty; r.unit = q.unit;
   } else if (t === 'Views') {
     r.name = str(w.name); r.stores = csv(w.stores); r.sort = Number(w.sort) || 0;

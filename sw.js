@@ -1,7 +1,7 @@
 ﻿// App shell cache: stale-while-revalidate. API- és Google-kéréseket nem cache-eljük.
 // (Verzióemelést a CACHE név átírásával – szerkesztővel, ne PowerShell Get/Set-Content-tel, mert az elrontja az ékezeteket.)
-const CACHE = 'liszt-v18';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'store.js', 'sync.js', 'backend.js', 'icons.js', 'theme.js',
+const CACHE = 'liszt-v21';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'store.js', 'sync.js', 'realtime.js', 'backend.js', 'icons.js', 'theme.js',
   'logic.js', 'config.js', 'manifest.webmanifest', 'icons/logo.svg', 'icons/icon-192.png','icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {

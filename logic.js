@@ -128,16 +128,30 @@ export function renumber(list, from, to) {
 // ---------- Mennyiség és egység ----------
 
 /** Mértékegységek és a léptetés lépésköze. */
-export const UNITS = [
+export const DEFAULT_UNITS = [
   { id: 'db', step: 1 }, { id: 'kg', step: 0.5 }, { id: 'dkg', step: 10 }, { id: 'g', step: 100 },
   { id: 'l', step: 0.5 }, { id: 'dl', step: 1 }, { id: 'csomag', step: 1 }, { id: 'doboz', step: 1 }, { id: 'üveg', step: 1 },
+  { id: 'karton', step: 1 },
 ];
-const UNIT_ALIASES = {
-  db: 'db', darab: 'db', kg: 'kg', kiló: 'kg', kilo: 'kg', dkg: 'dkg', deka: 'dkg', dag: 'dkg', g: 'g', gr: 'g', gramm: 'g',
-  l: 'l', liter: 'l', dl: 'dl', deci: 'dl', csomag: 'csomag', cs: 'csomag', doboz: 'doboz', üveg: 'üveg', uveg: 'üveg',
-};
+const BASE_ALIASES = { darab: 'db', kiló: 'kg', kilo: 'kg', deka: 'dkg', dag: 'dkg', gr: 'g', gramm: 'g', liter: 'l', deci: 'dl', cs: 'csomag', uveg: 'üveg' };
 const NUM = '(\\d+\\/\\d+|\\d+(?:[.,]\\d+)?)';
-const UNIT_RE = Object.keys(UNIT_ALIASES).sort((a, b) => b.length - a.length).join('|');
+const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export let UNITS = DEFAULT_UNITS;     // a Kezelés → Mennyiségek lapon szerkeszthető; setUnits() cseréli
+let UNIT_ALIASES = {}, UNIT_RE = '', QTY_TOKEN, UNIT_TOKEN, unitsKey = '';
+/** list: [{id: név, step}] – üres lista esetén az alap egységek. A gyors bevitel felismerése is ezt használja. */
+export function setUnits(list) {
+  const u = (list && list.length ? list : DEFAULT_UNITS).map((x) => ({ id: String(x.id), step: Number(x.step) > 0 ? Number(x.step) : 1 }));
+  const key = JSON.stringify(u);
+  if (key === unitsKey) return;
+  unitsKey = key; UNITS = u;
+  UNIT_ALIASES = {};
+  for (const [al, id] of Object.entries(BASE_ALIASES)) if (u.some((x) => x.id === id)) UNIT_ALIASES[al] = id;
+  for (const x of u) UNIT_ALIASES[x.id.toLocaleLowerCase('hu')] = x.id;
+  UNIT_RE = Object.keys(UNIT_ALIASES).sort((x, y) => y.length - x.length).map(esc).join('|');
+  QTY_TOKEN = new RegExp('^' + NUM + '(?:(' + UNIT_RE + ')\\.?|x|×)?$', 'iu');
+  UNIT_TOKEN = new RegExp('^(?:' + UNIT_RE + ')\\.?$', 'iu');
+}
+setUnits(DEFAULT_UNITS);
 
 export function normUnit(u) {
   return UNIT_ALIASES[String(u || '').trim().toLocaleLowerCase('hu')] || '';
@@ -241,8 +255,6 @@ function matchEntityAt(tokens, end, entities, ignore) {
   return best;
 }
 
-const QTY_TOKEN = new RegExp('^' + NUM + '(?:(' + UNIT_RE + ')\\.?|x|×)?$', 'iu');
-const UNIT_TOKEN = new RegExp('^(?:' + UNIT_RE + ')\\.?$', 'iu');
 
 /**
  * Okos gyors bevitel: mennyiség (elöl vagy hátul), valamint a sor VÉGÉN álló bolt és címzett.

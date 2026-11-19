@@ -4,7 +4,7 @@ import * as sync from './sync.js';
 import * as backend from './backend.js';
 import { icon, CAT_ICONS, catIconName, PERSON_ICONS, personIconName, TEMPLATE_ICONS, templateIconName } from './icons.js';
 import { buildSections, groupByCategory, categoryOrder, suggestions, defaultStoresForView, renumber, safeColor,
-  UNITS, formatQty, stepQty, journal, frequent, dayKey, parseSmart, entityKeys, templatePlan, templateItemsFrom, mergeSections,
+  UNITS, setUnits, formatQty, stepQty, journal, frequent, dayKey, parseSmart, entityKeys, templatePlan, templateItemsFrom, mergeSections,
   findDuplicate, addQty, findProduct } from './logic.js';
 
 const $app = document.getElementById('app');
@@ -131,6 +131,8 @@ async function learnProduct(item, explicit) {
 // ---- Render ----
 function render() {
   closeNavPop();   // újrarajzoláskor a felugró menü (a body-ban lóg) ne maradjon árván nyitva
+  setUnits(live('Units').sort(bySort).map((u) => ({ id: u.name, step: u.step })));   // a Kezelésben szerkeszthető mértékegységek
+  const scrollY = window.scrollY;   // az újrarajzolás (pl. szinkron után) ne ugrassa vissza az oldalt
   if (needLogin) return renderLogin();
   const view = currentView();
   const sec = sectionsFor(view);
@@ -147,9 +149,10 @@ function render() {
     isDesk ? null : bottomNav(),
   ].filter(Boolean));
   revealActiveTabs();
+  if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
   if (keepQuick) {
     const q = document.getElementById(keepQuick.id);
-    if (q) { q.value = keepQuick.v; q.focus(); q.setSelectionRange(keepQuick.s, keepQuick.s);
+    if (q) { q.value = keepQuick.v; q.focus({ preventScroll: true }); q.setSelectionRange(keepQuick.s, keepQuick.s);
       // csak a lista mezőjénél kell újraszámolni az előnézetet (a keresőmező input-eseménye újrarajzolna → végtelen ciklus)
       if (keepQuick.id === 'q') q.dispatchEvent(new Event('input')); }
   }
@@ -382,7 +385,7 @@ function accountView() {
           fact('Utolsó sikeres szinkron', fmtWhen(info.lastOk)),
           fact('Feltöltésre vár', queue.length ? queue.length + ' változás' : 'semmi – minden fent van', queue.length ? 'warn' : ''),
           info.lastError && info.lastError.at > info.lastOk ? fact('Utolsó hiba', fmtWhen(info.lastError.at) + ' – ' + info.lastError.text, 'bad') : null,
-          fact('Bejelentkezés érvényes', auth ? fmtWhen(auth.exp, false) + '-ig (használat közben magától megújul)' : '–'))
+          fact('Bejelentkezés érvényes', auth ? (auth.refresh ? 'magától megújul' : fmtWhen(auth.exp, false) + '-ig (használat közben magától megújul)') : '–'))
           : h('p', { class: 'muted small' }, 'Helyi mód: nincs beállított szerver, az adatok csak ebben a böngészőben vannak.'),
         h('div', { class: 'actions', style: 'justify-content:flex-start' },
           backend.enabled() ? [
@@ -396,6 +399,11 @@ function accountView() {
       h('div', { class: 'card' }, queue.slice(0, 30).map((q) => h('div', { class: 'mrow' },
         h('div', { class: 'cell' }, h('div', {}, q.r.name || q.r.id), h('div', { class: 'muted small' }, (TABLE_LABEL[q.t] || q.t) + (q.r.deleted ? ' · törlés' : '') + ' · ' + fmtWhen(q.r.updated_at)))))),
       queue.length > 30 ? h('p', { class: 'muted small' }, `…és még ${queue.length - 30}`) : null) : null,
+    h('section', { class: 'sec' },
+      h('div', { class: 'sechead' }, h('span', {}, 'Adatok mentése')),
+      h('div', { class: 'card pad' },
+        h('p', { class: 'muted small', style: 'margin:0 0 10px' }, 'Az ingyenes szerver nem készít automatikus mentést, ezért időnként érdemes letölteni az adatokat. A fájl ezen az eszközön lévő (utoljára szinkronizált) adatot tartalmazza.'),
+        h('button', { class: 'btn', onclick: exportData }, 'Adatok exportálása (JSON)'))),
     h('section', { class: 'sec' },
       h('div', { class: 'sechead' }, h('span', {}, 'Megjelenés')),
       h('div', { class: 'card pad' },
@@ -435,7 +443,7 @@ function syncLogSection(info, KIND) {
 // ---- Lista oldal ----
 function listView(view, sec) {
   const auth = sync.getAuth();
-  const showAuthBanner = backend.enabled() && (!auth || auth.exp <= Date.now());
+  const showAuthBanner = backend.enabled() && !sync.authValid(auth);
   const total = openCount(sec);
   return h('div', {},
     h('div', { class: 'pagehead desktop-only' }, h('h1', {}, pageTitle(view)), h('span', { class: 'sub' }, `${total} nyitott tétel`)),
@@ -1030,6 +1038,7 @@ function openTemplateItem(ti) {
     dlg.append(
       h('h3', {}, 'Sablontétel'),
       h('label', { class: 'f' }, 'Név'), name,
+      step ? h('div', {}, h('label', { class: 'f' }, 'Lépésköz (a + / − gombnál)'), step) : null,
       h('label', { class: 'f' }, 'Mennyiség'), ctl.node,
       h('label', { class: 'f' }, 'Kategória'), category,
       h('p', { class: 'muted small' }, 'A boltot és a címzettet a tétel címkéire koppintva állíthatod.'),
@@ -1159,9 +1168,10 @@ const MANAGE = {
   people: { table: 'People', one: 'címzett', One: 'Címzett', hint: 'Akinek vagy aminek a tétel szól: családtag, de akár hely is (pl. „Hétvégi ház”). Szűrni a Címzett listával lehet.' },
   views: { table: 'Views', one: 'nézet', One: 'Nézet', hint: 'A nézet azt mondja meg, mely boltokban vagy, és mit mutasson még a lista.' },
   templates: { table: 'Templates', one: 'sablon', One: 'Sablon', hint: 'Előre összeállított tétellisták (pl. havi nagybevásárlás, hétvégi ház). A lista „Sablonból” gombjával egy mozdulattal felvehetők.' },
+  units: { table: 'Units', one: 'mennyiség', One: 'Mennyiség', hint: 'A mértékegységek (pl. kg, db, karton), amelyek a tételeknél választhatók és a gyors bevitelben felismerődnek („tej 2 karton”). A lépésköz azt adja meg, mennyivel változik a szám a + / − gombbal. Ha nincs egyetlen sem, az alap egységek érvényesek.' },
 };
 
-const MANAGE_TABS = [['products', 'Termékek'], ['categories', 'Kategóriák'], ['stores', 'Boltok'], ['people', 'Címzettek'], ['views', 'Nézetek'], ['templates', 'Sablonok']];
+const MANAGE_TABS = [['products', 'Termékek'], ['categories', 'Kategóriák'], ['stores', 'Boltok'], ['people', 'Címzettek'], ['views', 'Nézetek'], ['templates', 'Sablonok'], ['units', 'Mennyiségek']];
 // fülsáv (Raktár-stílus): aláhúzott fülek, vízszintesen görgethető; az aktív fül mindig látszik (revealActiveTabs)
 const manageTabs = () => h('div', { class: 'tabs', role: 'tablist' }, MANAGE_TABS.map(([k, l]) =>
   h('button', { class: manageTab === k ? 'active' : '', role: 'tab', 'aria-selected': String(manageTab === k), onclick: () => { manageTab = k; render(); } }, l)));
@@ -1223,6 +1233,7 @@ function openProductEditor(p) {
     dlg.append(
       h('h3', {}, isNew ? 'Új termék' : 'Termék szerkesztése'),
       h('label', { class: 'f' }, 'Név'), name,
+      step ? h('div', {}, h('label', { class: 'f' }, 'Lépésköz (a + / − gombnál)'), step) : null,
       h('label', { class: 'f' }, 'Más nevek / keresőszavak (vesszővel)'), kw,
       h('label', { class: 'f' }, 'Kategória'), category,
       h('label', { class: 'f' }, 'Szokásos egység'), h('div', { class: 'units' }, unitBtns),
@@ -1254,8 +1265,9 @@ function manageView() {
   const m = MANAGE[manageTab];
   const list = manageTab === 'people' ? peopleList() : live(m.table).sort(bySort);
   const lead = (r) => ({ categories: () => catBadge(r, 16), stores: () => storeBadge(r), people: () => personBadge(r), views: () => h('span', { class: 'caticon plain' }, icon('list', 16)),
+    units: () => h('span', { class: 'caticon plain' }, icon('box', 16)),
     templates: () => templateBadge(r) }[manageTab]());
-  const sub = (r) => (manageTab === 'views' ? viewSummary(r)
+  const sub = (r) => (manageTab === 'views' ? viewSummary(r) : manageTab === 'units' ? 'lépésköz: ' + formatQty(String(r.step), '')
     : manageTab === 'people' ? [r.id === me() ? 'te' : '', r.email ? 'be tud jelentkezni' : ''].filter(Boolean).join(' · ')
       : manageTab === 'templates' ? [templateItemsOf(r.id).length + ' tétel', r.for ? personName(r.for) : ''].filter(Boolean).join(' · ') : '');
   // sablonnál a sor (és a szerkesztés) a sablon oldalát nyitja
@@ -1302,15 +1314,17 @@ async function move(table, list, from, to) {
 function openManageEditor(tab, row) {
   const m = MANAGE[tab];
   const isNew = !row;
-  const hasLook = tab !== 'views';                         // szín (+ ikon) választható
+  const hasLook = tab !== 'views' && tab !== 'units';                         // szín (+ ikon) választható
   const icons = tab === 'categories' ? CAT_ICONS : tab === 'people' ? PERSON_ICONS : tab === 'templates' ? TEMPLATE_ICONS : null;
   const base = row || (tab === 'views'
     ? { id: '', name: '', stores: [], include_unassigned: false, show_others: false, show_people: true, sort: 0, deleted: false }
+    : tab === 'units' ? { id: '', name: '', step: 1, sort: 0, deleted: false }
     : { id: '', name: '', color: SWATCHES[0], icon: { categories: 'box', people: 'user', templates: 'template' }[tab] || '', email: '', for: '', sort: 0, deleted: false });
   const badgeFor = (color, ic) => (tab === 'categories' ? catBadge({ ...base, color, icon: ic }, 20) : tab === 'people' ? personBadge({ color, icon: ic }, 20)
     : tab === 'templates' ? templateBadge({ color, icon: ic }, 20) : storeBadge({ color }, 20));
   modal((dlg, close) => {
-    const name = h('input', { type: 'text', value: base.name, maxLength: 100 });
+    const name = h('input', { type: 'text', value: base.name, maxLength: tab === 'units' ? 20 : 100 });
+    const step = tab === 'units' ? h('input', { type: 'text', inputMode: 'decimal', value: String(base.step).replace('.', ','), maxLength: 8 }) : null;
     const hasKw = tab === 'stores' || tab === 'people';
     const kw = hasKw ? h('input', { type: 'text', value: base.keywords || '', maxLength: 200, placeholder: tab === 'stores' ? 'pl. lidli, lídl' : 'pl. mama, nyaraló' }) : null;
     // Szín: előre megadott árnyalatok + egyéni választó. Az aktuális értéket a `chosen` tartja.
@@ -1344,6 +1358,7 @@ function openManageEditor(tab, row) {
     dlg.append(
       h('h3', {}, isNew ? 'Új ' + m.one : m.One + ' szerkesztése'),
       h('label', { class: 'f' }, 'Név'), name,
+      step ? h('div', {}, h('label', { class: 'f' }, 'Lépésköz (a + / − gombnál)'), step) : null,
       tab === 'people' && base.email ? h('p', { class: 'muted small' }, `Belépési e-mail: ${base.email} (csak a Sheetben módosítható)`) : null,
       hasKw ? h('div', {}, h('label', { class: 'f' }, 'Keresőszavak a gyors bevitelhez (vesszővel elválasztva)'), kw,
         h('p', { class: 'muted small', style: 'margin:4px 0 0' }, 'A nevet magától is felismeri, kis- és nagybetűtől, ékezettől és ragtól függetlenül (pl. „Lidlbe”, „nagyinak”). Ide csak a becenevek, más írásmódok kellenek.')) : null,
@@ -1364,6 +1379,12 @@ function openManageEditor(tab, row) {
             next.id = slug(n, new Set(all.map((r) => r.id)));
             next.sort = Math.max(0, ...all.filter((r) => !r.deleted).map((r) => r.sort || 0)) + 10;
           }
+          if (step) {
+            const sv = parseFloat(step.value.replace(',', '.'));
+            if (!(sv > 0)) { step.focus(); return; }
+            next.step = sv;
+            if (!isNew && n !== base.name) await renameUnit(base.name, n);   // a már felvett tételek is az új nevet kapják
+          }
           if (hasLook) next.color = chosen;
           if (hasKw) next.keywords = kw.value.split(',').map((s) => s.trim()).filter(Boolean).join(', ');
           if (icons) next.icon = chosenIcon;
@@ -1381,9 +1402,26 @@ function openManageEditor(tab, row) {
   });
 }
 
+/** Minden helyi adat letöltése JSON-fájlként (kézi mentés). */
+function exportData() {
+  const data = { app: 'liszt', exportedAt: new Date().toISOString(), tables: Object.fromEntries(store.TABLES.map((t) => [t, store.list(t)])) };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+  a.download = 'liszt-mentes-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('Mentés letöltve');
+}
+
+/** Egység átnevezése: a tételek, sablontételek és termékek is az új nevet kapják. */
+async function renameUnit(from, to) {
+  const by = authEmail();
+  for (const t of ['Items', 'TemplateItems', 'Products']) for (const r of store.list(t)) if (r.unit === from) await store.save(t, { ...r, unit: to }, by);
+}
+
 async function deleteRow(tab, row) {
   const extra = { categories: ' A hozzá tartozó tételek „Egyéb” alá kerülnek.', stores: ' A tételekről és a nézetekből is lekerül.',
-    people: ' A neki szóló tételek „közös” tételek lesznek.', views: '', templates: ' A sablon tételei is törlődnek (a listán lévő tételek nem).' }[tab];
+    people: ' A neki szóló tételek „közös” tételek lesznek.', views: '', units: ' A már felvett tételeken a neve megmarad.', templates: ' A sablon tételei is törlődnek (a listán lévő tételek nem).' }[tab];
   if (!confirm(`Biztosan törlöd: „${row.name}”?${extra}`)) return;
   const by = authEmail();
   if (tab === 'categories') {
@@ -1401,6 +1439,8 @@ async function deleteRow(tab, row) {
     for (const ti of templateItemsOf(row.id)) await store.remove('TemplateItems', ti, by);
     await store.remove('Templates', row, by);
     if (page === 'template' && templateId === row.id) { page = 'manage'; manageTab = 'templates'; }
+  } else if (tab === 'units') {
+    await store.remove('Units', row, by);
   } else {
     if (viewId === row.id) { viewId = '__all'; ls.set('viewId', viewId); }
     await store.remove('Views', row, by);
@@ -1465,7 +1505,7 @@ async function doLogin(idToken) {
     // belépés előtt töröljük. (Ugyanaz a felhasználó újra belépve megtartja a még el nem küldött változásait.)
     if (dataOwner() !== res.email) { await store.wipeData(); await clearUserTraces(); }
     await store.setMeta('owner', res.email);
-    await sync.setAuth({ token: res.token, exp: res.exp, email: res.email, personId: res.personId, name: res.name });
+    await sync.setAuth({ token: res.token, refresh: res.refresh, exp: res.exp, email: res.email, personId: res.personId, name: res.name });
     needLogin = false;
     render();
     sync.runSync();
