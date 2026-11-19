@@ -133,7 +133,7 @@ function render() {
   closeNavPop();   // újrarajzoláskor a felugró menü (a body-ban lóg) ne maradjon árván nyitva
   setUnits(live('Units').sort(bySort).map((u) => ({ id: u.name, step: u.step })));   // a Kezelésben szerkeszthető mértékegységek
   const scrollY = window.scrollY;   // az újrarajzolás (pl. szinkron után) ne ugrassa vissza az oldalt
-  if (needLogin) return renderLogin();
+  if (needLogin) { shownRows = null; return renderLogin(); }
   const view = currentView();
   const sec = sectionsFor(view);
   const isDesk = desktop.matches;
@@ -143,7 +143,7 @@ function render() {
 
   const content = page === 'manage' ? manageView() : page === 'journal' ? journalView() : page === 'template' ? templateView()
     : page === 'account' ? accountView() : listView(view, sec);
-  const rowsBefore = page === 'list' ? captureRows(view, isDesk) : null;   // a tételsorok be-/kilépési animációjához
+
   $app.replaceChildren(...[
     topbar(isDesk, view),
     h('div', { class: 'layout' }, isDesk ? sidebar(view) : null, h('main', { class: 'content' }, content)),
@@ -151,7 +151,7 @@ function render() {
   ].filter(Boolean));
   revealActiveTabs();
   if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
-  animateRows(rowsBefore, view, isDesk);
+  updateRows(view, isDesk);
   if (keepQuick) {
     const q = document.getElementById(keepQuick.id);
     if (q) { q.value = keepQuick.v; q.focus({ preventScroll: true }); q.setSelectionRange(keepQuick.s, keepQuick.s);
@@ -160,47 +160,45 @@ function render() {
   }
 }
 
-// ---- Tételsorok animációja: új tétel (helyi vagy másik eszközről) beúszik, a törölt/lezárt kihalványul ----
-// Csak ugyanazon a nézeten belül, és csak kevés sornál (nagy tömeges változásnál – pl. első letöltés – nem animál).
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-const rowsKey = (view, isDesk) => [page, view.id, personFilter, isDesk].join('|');
-function captureRows(view, isDesk) {
-  return { key: rowsKey(view, isDesk), els: [...$app.querySelectorAll('[data-row]')] };
+// ---- Tételsorok animációja: az új tétel (helyi vagy másik eszközről) beúszik, a törölt/lezárt kihalványul ----
+// A `shownRows` az utoljára megjelenített lista sorai. Animáció csak ugyanazon a listán belül, kevés sor változásánál van
+// (listaváltásnál, oldalváltásnál, nagy tömeges változásnál – pl. első letöltés – nincs).
+let shownRows = null;   // {key, els}
+const rowsKey = (view, isDesk) => [view.id, personFilter, isDesk].join('|');
+
+function updateRows(view, isDesk) {
+  const prev = shownRows;
+  shownRows = page === 'list' ? { key: rowsKey(view, isDesk), els: [...$app.querySelectorAll('[data-row]')] } : null;
+  if (prev && shownRows && prev.key === shownRows.key) animateRows(prev.els, shownRows.els);
 }
-const enterAt = new Map();   // id -> mikor lépett be (újrarajzoláskor a már futó animáció folytatódik, nem indul újra)
-const ENTER_MS = 1700;
-function animateRows(before, view, isDesk) {
-  const now = [...$app.querySelectorAll('[data-row]')];
+
+const ENTER_MS = 1500;   // = a CSS-ben a kiemelés hossza
+function animateRows(prevEls, nowEls) {
   const t = Date.now();
-  if (before && before.key === rowsKey(view, isDesk) && !reduceMotion.matches) {
-    const nowIds = new Set(now.map((e) => e.dataset.row));
-    const prevIds = new Set(before.els.map((e) => e.dataset.row));
-    const entered = now.filter((e) => !prevIds.has(e.dataset.row));
-    const left = before.els.filter((e) => !nowIds.has(e.dataset.row) && !e.classList.contains('leaving'));
-    if (entered.length + left.length <= 12) {
-      for (const e of entered) enterAt.set(e.dataset.row, t);
-      const byId = new Map(now.map((e) => [e.dataset.row, e]));
-      for (const g of left) {
-        const i = before.els.indexOf(g);
-        const prevEl = before.els.slice(0, i).reverse().map((e) => byId.get(e.dataset.row)).find(Boolean);
-        const nextEl = before.els.slice(i + 1).map((e) => byId.get(e.dataset.row)).find(Boolean);
-        if (prevEl) prevEl.after(g); else if (nextEl) nextEl.before(g); else continue;   // nincs hova tenni: nem animáljuk
-        g.classList.add('leaving'); g.setAttribute('aria-hidden', 'true');
-        g.style.setProperty('--h', g.getBoundingClientRect().height + 'px');
-        const done = () => g.remove();
-        g.addEventListener('animationend', done, { once: true });
-        setTimeout(done, 900);
-      }
-    }
-  }
-  for (const [id, at] of enterAt) if (t - at > ENTER_MS) enterAt.delete(id);
-  if (!enterAt.size) return;
-  for (const e of now) {
-    const at = enterAt.get(e.dataset.row);
-    if (at == null) continue;
-    e.style.setProperty('--age', (t - at) + 'ms');
+  const prevById = new Map(prevEls.map((e) => [e.dataset.row, e]));
+  const nowById = new Map(nowEls.map((e) => [e.dataset.row, e]));
+  const removed = prevEls.filter((e) => !nowById.has(e.dataset.row));
+  const added = nowEls.filter((e) => !prevById.has(e.dataset.row));
+  const bulk = added.length + removed.length > 12;
+  // Az új sor most indítja az animációt; ha közben újrarajzolás volt (pl. a felvétel a terméklistát is menti), a sor folytatja a futót.
+  for (const e of nowEls) {
+    const old = prevById.get(e.dataset.row);
+    const at = old ? Number(old.dataset.enter) || 0 : bulk ? 0 : t;
+    if (!at || t - at > ENTER_MS) continue;
+    e.dataset.enter = at;
+    e.style.setProperty('--since', t - at + 'ms');
     e.classList.add('enter');
-    setTimeout(() => e.classList.remove('enter'), ENTER_MS - (t - at));
+  }
+  if (bulk) return;
+  for (const g of removed) {   // a régi sor visszakerül a helyére (az előtte/utána lévő megmaradt sor mellé), és kihalványul
+    const i = prevEls.indexOf(g);
+    const before = prevEls.slice(0, i).reverse().map((e) => nowById.get(e.dataset.row)).find(Boolean);
+    const after = prevEls.slice(i + 1).map((e) => nowById.get(e.dataset.row)).find(Boolean);
+    if (before) before.after(g); else if (after) after.before(g); else continue;
+    g.classList.remove('enter');
+    g.classList.add('leaving');
+    g.setAttribute('aria-hidden', 'true');
+    setTimeout(() => g.remove(), 600);
   }
 }
 
@@ -451,7 +449,8 @@ function accountView() {
         h('p', { class: 'muted small', style: 'margin:0 0 10px' }, 'Az ingyenes szerver nem készít automatikus mentést, ezért időnként érdemes letölteni az adatokat. A fájl ezen az eszközön lévő (utoljára szinkronizált) adatot tartalmazza.'),
         h('div', { class: 'actions', style: 'justify-content:flex-start' },
           h('button', { class: 'btn', onclick: exportData }, 'Adatok exportálása (JSON)'),
-          h('button', { class: 'btn', onclick: importData }, 'Importálás mentésfájlból…')))),
+          h('button', { class: 'btn', onclick: importData }, 'Importálás mentésfájlból…')),
+        h('p', { class: 'muted small', style: 'margin:10px 0 0' }, 'Alkalmazás-verzió: ' + BUILD))),
     h('section', { class: 'sec' },
       h('div', { class: 'sechead' }, h('span', {}, 'Megjelenés')),
       h('div', { class: 'card pad' },
@@ -766,6 +765,7 @@ function tableBody(list, o, catList) {
 
 // ---- Dialógus-segéd ----
 const coarsePointer = matchMedia('(pointer: coarse)');
+const BUILD = 'v30';   // = a sw.js gyorsítótár-verziója; a Fiók oldalon látszik, hogy az eszközön melyik kód fut
 function modal(build, cls) {
   const dlg = h('dialog', { class: cls || '' });
   // A natív append a null-t „null”, a tömböt „[object …]” szövegként szúrná be → itt lapítunk és szűrünk.
@@ -788,6 +788,12 @@ function modal(build, cls) {
     if (ok) close();
   });
   document.body.append(dlg);
+  // Érintős eszközön a showModal az első beviteli mezőt fókuszálná (felugrik a billentyűzet). Meglévő adat szerkesztésénél a mező
+  // nem üres → a kezdő fókuszt a címsorra tesszük (autofocus), így a billentyűzet meg sem nyílik. Új, üres mezőnél marad a fókusz.
+  const first = dlg.querySelector('input[type=text], input:not([type]), textarea');
+  const noKeyboard = coarsePointer.matches && first && (first.value || first.classList.contains('qtyval'));
+  const title = dlg.querySelector('h3, h2');
+  if (noKeyboard && title) { title.tabIndex = -1; title.setAttribute('autofocus', ''); }
   dlg.showModal();
   // Érintős eszközön a böngésző az első mezőt fókuszálja → felugrik a billentyűzet. Meglévő adat szerkesztésénél (a mező nem üres)
   // levesszük a fókuszt, hogy pl. a mennyiség állításához ne kelljen előbb elrejteni; új, üres mezőnél marad (ott gépelni kell).
