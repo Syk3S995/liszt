@@ -80,7 +80,7 @@ export function getSyncInfo() {
 async function logRun(entry) {
   const log = [entry, ...store.getMeta('syncLog', [])].slice(0, LOG_MAX);
   await store.setMeta('syncLog', log);
-  if (entry.kind === 'ok' || entry.kind === 'same') await store.setMeta('lastSyncOk', entry.at);
+  if (entry.kind === 'ok' || entry.kind === 'same' || entry.kind === 'fix') await store.setMeta('lastSyncOk', entry.at);
   else await store.setMeta('lastSyncError', { at: entry.at, text: entry.err || entry.kind });
 }
 const ERR_TEXT = { auth: 'Lejárt bejelentkezés', busy: 'A szerver foglalt, újrapróbálja', not_allowed: 'Ez az e-mail-cím nincs engedélyezve', too_many_changes: 'Túl sok változás egyszerre', server_error: 'Szerverhiba', bad_request: 'Hibás kérés' };
@@ -110,7 +110,9 @@ export async function runSync({ full = false, manual = false } = {}) {
     const since = full ? 0 : store.getMeta('since', 0);
     // Verziót csak akkor küldünk, ha nincs feltöltendő: ilyenkor változatlan szerveradatnál nem jön le semmi.
     const version = full || sent.length ? '' : store.getMeta('dataVersion', '');
-    const res = await backend.sync(auth.token, since, sent.map((q) => ({ t: q.t, r: store.toWire(q.t, q.r) })), version);
+    // Egyeztetés: ha nincs feltöltendő, a helyi sorszámokat is küldjük – eltérésnél (árva helyi sor) a szerver állapotára hozzuk az eszközt.
+    const counts = version ? store.counts() : null;
+    const res = await backend.sync(auth.token, since, sent.map((q) => ({ t: q.t, r: store.toWire(q.t, q.r) })), version, counts);
     if (!res.ok) {
       const err = ERR_TEXT[res.error] || res.error;
       // lejárt hozzáférési token, de van refresh token: megújítjuk és újrapróbáljuk, nem léptetünk ki
@@ -131,11 +133,12 @@ export async function runSync({ full = false, manual = false } = {}) {
       await store.clearQueue(sent);
       const data = res.data || {};
       await store.applyIncoming(data);
-      if (full) await store.pruneToServer(data);   // a szerveren nem létező helyi sorok (pl. régi, feltöltetlen adat) kikerülnek
+      let fixed = 0;
+      if (full || res.full) fixed = await store.pruneToServer(data);   // a szerveren nem létező helyi sorok (pl. régi, feltöltetlen adat) kikerülnek
       await store.setMeta('since', Math.max(0, Number(res.serverTime) - OVERLAP_MS));
       await store.setMeta('dataVersion', String(res.version || ''));
       const recv = Object.values(data).reduce((s, l) => s + (Array.isArray(l) ? l.length : 0), 0);
-      await logRun({ ...base, ms: Date.now() - t0, kind: 'ok', recv });
+      await logRun({ ...base, ms: Date.now() - t0, kind: res.full && !full ? 'fix' : 'ok', recv, fixed });
     }
     setStatus('ok', store.pendingCount() ? pendingText('') : 'Mentve');
     startRealtime();

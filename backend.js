@@ -46,10 +46,11 @@ export async function refresh(refreshToken) {
 /**
  * -> {ok, serverTime, version, data:{Items,…}} | {ok, unchanged:true, version} | {ok:false, error:'auth'|'not_allowed'|…}
  * version: a készülék utolsó adatverziója – ha a szerveren azóta nem változott semmi, nem jön le adat.
+ * counts: a helyi sorszámok táblánként (csak ha nincs feltöltendő): azonos verziónál eltérés esetén a szerver teljes állapotot ad ({full:true}).
  */
-export async function sync(token, since, changes, version = '') {
-  if (!useSb()) return post({ action: 'sync', token, since, changes, version });
-  const res = await sbFetch('/rest/v1/rpc/sync', { p_since: since, p_changes: changes, p_version: version }, token);
+export async function sync(token, since, changes, version = '', counts = null) {
+  if (!useSb()) return post({ action: 'sync', token, since, changes, version, counts });
+  const res = await sbFetch('/rest/v1/rpc/sync', { p_since: since, p_changes: changes, p_version: version, p_counts: counts }, token);
   if (res.status === 401) return { ok: false, error: 'auth' };
   if (!res.ok) throw new Error('http_' + res.status);
   return res.json();

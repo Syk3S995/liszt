@@ -49,6 +49,8 @@ export async function delMeta(k) {
 
 export const list = (t) => [...state[t].values()];
 export const pendingCount = () => queue.size;
+/** Helyi sorok száma táblánként (a szerverrel való egyeztetéshez; csak üres feltöltési sornál összevethető). */
+export const counts = () => Object.fromEntries(TABLES.map((t) => [t, state[t].size]));
 export const getQueue = () => [...queue.values()];
 
 export const uuid = () =>

@@ -370,7 +370,7 @@ function accountView() {
   const move = (i, j) => { const keys = order.map((n) => n.key); [keys[i], keys[j]] = [keys[j], keys[i]]; setNavOrder(keys); render(); };
   const theme = window.BevTheme ? window.BevTheme.get() : 'auto';
   const fact = (k, v, cls) => [h('dt', {}, k), h('dd', { class: cls || '' }, v)];
-  const KIND = { ok: 'Sikeres', same: 'Változatlan', error: 'Hiba', auth: 'Bejelentkezés kell', offline: 'Offline' };
+  const KIND = { ok: 'Sikeres', same: 'Változatlan', fix: 'Egyeztetve', error: 'Hiba', auth: 'Bejelentkezés kell', offline: 'Offline' };
   return h('div', {},
     h('div', { class: 'pagehead desktop-only' }, h('h1', {}, 'Fiók')),
     h('section', { class: 'sec' },
@@ -429,7 +429,7 @@ function accountView() {
 function syncLogSection(info, KIND) {
   if (!info.log.length) return null;
   const secs = (ms) => (ms / 1000).toLocaleString('hu-HU', { maximumFractionDigits: 1 }) + ' mp';
-  const okRuns = info.log.filter((e) => e.kind === 'ok' || e.kind === 'same');
+  const okRuns = info.log.filter((e) => e.kind === 'ok' || e.kind === 'same' || e.kind === 'fix');
   const avg = okRuns.length ? secs(okRuns.reduce((s, e) => s + e.ms, 0) / okRuns.length) : '–';
   return h('section', { class: 'sec' },
     h('div', { class: 'sechead' }, h('span', {}, 'Szinkron napló'), h('span', { class: 'count' }, info.log.length)),
