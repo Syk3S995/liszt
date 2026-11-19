@@ -276,7 +276,7 @@ table.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 dialog { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); width: min(92vw, 460px); padding: 20px; max-height: 92vh; overflow-y: auto; }
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
 dialog h3 { margin: 0 0 6px; font-weight: 500; font-size: 1.15rem; }
-dialog label.f { display: block; font-size: .8rem; color: var(--muted); margin: 12px 0 4px; }
+label.f { display: block; font-size: .8rem; color: var(--muted); margin: 12px 0 4px; }
 dialog input[type=text], dialog select, dialog textarea { width: 100%; }
 .checks { display: flex; flex-wrap: wrap; gap: 8px; }
 .checks label { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 16px; padding: 5px 12px; }
@@ -304,12 +304,23 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
 #toast > span { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; }
 .toastbtn { border: 0; background: transparent; color: var(--toast-btn); font-weight: 500; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
 
-/* ----- Okos bevitel előnézete ----- */
+/* ----- Okos bevitel: előnézet, javaslatok, kitöltő panel ----- */
 .smart { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -8px 4px 12px; font-size: .85rem; }
-.smart:empty { display: none; }
+.smart:empty, .sugg:empty, .qpanel:empty { display: none; }
 .smartname { color: var(--muted); }
-.smart .x { border: 0; background: transparent; padding: 0 0 0 2px; color: var(--muted); display: inline-flex; cursor: pointer; }
-.smart .x:hover { color: var(--urgent); }
+.x { border: 0; background: transparent; padding: 0 0 0 2px; color: var(--muted); display: inline-flex; cursor: pointer; }
+.x:hover { color: var(--urgent); }
+.sugg, .qpanel { margin: -6px 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+.sugg { overflow: hidden; }
+.sug { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; border: 0; background: transparent; padding: 8px 14px; text-align: left; cursor: pointer; }
+.sug + .sug { border-top: 1px solid var(--line); }
+.sug:hover, .sug.active { background: var(--primary-soft); }
+.sug .sub { margin-left: auto; color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.sug.new { color: var(--primary); font-weight: 500; }
+.qpanel { padding: 2px 14px 14px; }
+.qpanel .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qpanel select { width: 100%; }
+.qpanel .stepbtn { width: 40px; height: 40px; }
 /* kattintható címkék (bolt / címzett gyorsválasztó) */
 .tagbtn { border: 0; background: transparent; padding: 2px; margin: -2px; border-radius: 12px; display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; cursor: pointer; font: inherit; text-align: left; }
 .tagbtn:hover { background: var(--surface-2); }
@@ -330,7 +341,7 @@ tr.item:hover .hoverhint, .tagbtn:focus-visible .hoverhint { opacity: 1; }
 .stepper { display: flex; align-items: center; gap: 10px; }
 .stepbtn { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface-2); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .stepbtn:active { transform: scale(.95); }
-dialog input.qtyval { flex: 1; width: auto; min-width: 0; text-align: center; font-size: 1.4rem; font-variant-numeric: tabular-nums; padding: 8px; }
+input.qtyval { flex: 1; width: auto; min-width: 0; text-align: center; font-size: 1.4rem; font-variant-numeric: tabular-nums; padding: 8px; }
 .units { display: flex; flex-wrap: wrap; gap: 6px; }
 dialog.compact { width: min(92vw, 380px); }
 /* mobilon a kis ablakok is alulról nyíló, teljes szélességű lapok (a fenti szabály ne írja felül) */

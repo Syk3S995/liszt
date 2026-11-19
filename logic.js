@@ -416,3 +416,33 @@ export function templateItemsFrom(items, templateId, newId) {
 export function safeColor(c, fallback = '') {
   return /^#[0-9a-fA-F]{6}$/.test(String(c || '')) ? c : fallback;
 }
+
+// ---------- Keresés és kategória-tipp a beviteli mezőhöz ----------
+
+/** Tételek szűrése a beírt szövegre: a tétel nevében vagy a hozzá tartozó termék keresőszavaiban szerepel (ékezet- és kisbetű-függetlenül). */
+export function filterItems(items, products, query) {
+  const q = normText(query);
+  if (!q) return items;
+  const kw = new Map(products.filter((p) => !p.deleted).map((p) => [normText(p.name), normText(p.keywords)]));
+  return items.filter((it) => { const n = normText(it.name); return n.includes(q) || (kw.get(n) || '').includes(q); });
+}
+
+/**
+ * Kategória-tipp egy új névhez: azokat a termékeket nézi, amelyekkel van közös szava (a ragozást is tűri: „sajtok” ~ „sajt”),
+ * és a leggyakoribb kategóriájukat adja. Az „egyeb” nem számít tippnek. -> kategória-id, vagy '' ha nincs tipp.
+ */
+export function guessCategory(products, name) {
+  const words = normText(name).split(' ').filter((w) => w.length >= 3);
+  if (!words.length) return '';
+  // azonos szó, ragozott alak (előtag) vagy összetett szó vége („kecskesajt” ~ „sajt”)
+  const same = (a, b) => a === b || (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a) || a.endsWith(b) || b.endsWith(a)));
+  const votes = new Map();
+  for (const p of products) {
+    if (p.deleted || !p.category || p.category === 'egyeb') continue;
+    const pw = normText(`${p.name} ${String(p.keywords || '').replace(/,/g, ' ')}`).split(' ').filter((w) => w.length >= 3);
+    if (pw.some((w) => words.some((x) => same(x, w)))) votes.set(p.category, (votes.get(p.category) || 0) + 1);
+  }
+  let best = '', n = 0;
+  for (const [c, v] of votes) if (v > n) { best = c; n = v; }
+  return best;
+}

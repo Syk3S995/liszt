@@ -5,7 +5,7 @@ import * as backend from './backend.js';
 import { icon, CAT_ICONS, catIconName, PERSON_ICONS, personIconName, TEMPLATE_ICONS, templateIconName } from './icons.js';
 import { buildSections, groupByCategory, categoryOrder, suggestions, defaultStoresForView, renumber, safeColor,
   UNITS, setUnits, formatQty, stepQty, journal, frequent, dayKey, parseSmart, entityKeys, templatePlan, templateItemsFrom, mergeSections,
-  findDuplicate, addQty, findProduct, normText } from './logic.js';
+  findDuplicate, addQty, findProduct, normText, filterItems, guessCategory } from './logic.js';
 
 const $app = document.getElementById('app');
 const ALL_VIEW = { id: '__all', name: 'Összes', all: true, stores: [], include_unassigned: true, show_others: true, show_people: true };
@@ -138,8 +138,9 @@ function render() {
   const sec = sectionsFor(view);
   const isDesk = desktop.matches;
   const active = document.activeElement;
-  // a gyors beviteli mezők (lista: #q, sablon: #tq) értéke és fókusza túlélje az újrarajzolást
-  const keepQuick = active && (active.id === 'q' || active.id === 'tq' || active.id === 'pq') ? { id: active.id, v: active.value, s: active.selectionStart } : null;
+  // a keresőmezők fókusza túlélje az újrarajzolást: a lista beviteli sávja (quickBar) maga marad meg, a sablon (#tq) és a termék (#pq) mezője újraépül
+  const keepBar = quickBar.node.contains(active) ? active : null;
+  const keepQuick = active && (active.id === 'tq' || active.id === 'pq') ? { id: active.id, v: active.value, s: active.selectionStart } : null;
 
   const content = page === 'manage' ? manageView() : page === 'journal' ? journalView() : page === 'template' ? templateView()
     : page === 'account' ? accountView() : listView(view, sec);
@@ -152,11 +153,10 @@ function render() {
   revealActiveTabs();
   if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
   updateRows(view, isDesk);
+  if (keepBar && keepBar.isConnected) keepBar.focus({ preventScroll: true });
   if (keepQuick) {
     const q = document.getElementById(keepQuick.id);
-    if (q) { q.value = keepQuick.v; q.focus({ preventScroll: true }); q.setSelectionRange(keepQuick.s, keepQuick.s);
-      // csak a lista mezőjénél kell újraszámolni az előnézetet (a keresőmező input-eseménye újrarajzolna → végtelen ciklus)
-      if (keepQuick.id === 'q') q.dispatchEvent(new Event('input')); }
+    if (q) { q.value = keepQuick.v; q.focus({ preventScroll: true }); q.setSelectionRange(keepQuick.s, keepQuick.s); }
   }
 }
 
@@ -166,9 +166,12 @@ function render() {
 let shownRows = null;   // {key, els}
 const rowsKey = (view, isDesk) => [view.id, personFilter, isDesk].join('|');
 
+/** A most látható sorok rögzítése (animáció nélkül is használható: szűrésnél). */
+const snapshotRows = (view, isDesk) => { shownRows = page === 'list' ? { key: rowsKey(view, isDesk), els: [...$app.querySelectorAll('[data-row]')] } : null; };
+
 function updateRows(view, isDesk) {
   const prev = shownRows;
-  shownRows = page === 'list' ? { key: rowsKey(view, isDesk), els: [...$app.querySelectorAll('[data-row]')] } : null;
+  snapshotRows(view, isDesk);
   if (prev && shownRows && prev.key === shownRows.key) animateRows(prev.els, shownRows.els);
 }
 
@@ -326,8 +329,8 @@ const popItem = (lead, label, count, sel, onclick) => h('button', { class: 'more
   lead, h('span', { class: 'grow' }, label), count ? h('span', { class: 'n' }, count) : null);
 
 // Listaváltás (nézet vagy címzett) és a listák nyitott tételszáma – a listaválasztó és az oldalsáv közös
-const showView = (v) => { personFilter = ''; viewId = v.id; ls.set('viewId', viewId); ls.set('person', ''); };
-const showPerson = (p) => { personFilter = p.id; ls.set('person', personFilter); };
+const showView = (v) => { quickBar.clear(); personFilter = ''; viewId = v.id; ls.set('viewId', viewId); ls.set('person', ''); };
+const showPerson = (p) => { quickBar.clear(); personFilter = p.id; ls.set('person', personFilter); };
 const viewCount = (v, items) => openCount(buildSections(items, v, me(), { catOrder: catOrder() }));
 const personCount = (p, items) => items.filter((i) => isOpen(i) && !i.checked && i.for === p.id).length;
 
@@ -498,19 +501,34 @@ function listView(view, sec) {
   const auth = sync.getAuth();
   const showAuthBanner = backend.enabled() && !sync.authValid(auth);
   const total = openCount(sec);
+  quickBar.update(view);
   return h('div', {},
     h('div', { class: 'pagehead desktop-only' }, h('h1', {}, pageTitle(view)), h('span', { class: 'sub' }, `${total} nyitott tétel`)),
     // mobilon a nézet/címzett választás a „Lista” gombbal vagy a címre koppintva nyíló listaválasztóban van
     showAuthBanner ? h('div', { class: 'banner' }, 'Jelentkezz be a szinkronhoz', h('button', { class: 'btn primary', onclick: () => { needLogin = true; render(); } }, 'Bejelentkezés')) : null,
-    quickAdd(view),
-    frequentChips(view),
-    renderSections(sec, view));
+    quickBar.node,
+    h('div', { id: 'listbody' }, listBody(view, sec)));
+}
+
+/** A lista törzse: gyakori chipek + szakaszok. Ha a beviteli mezőben szöveg van, csak a találatok látszanak (a többi szakasz is, ha ott van találat). */
+function listBody(view, sec) {
+  const q = quickBar.query();
+  if (!q) return [frequentChips(view), renderSections(sec, view)];
+  return [renderSections(sectionsFor(view, filterItems(store.list('Items'), live('Products'), q)), view, true)];
+}
+/** Gépelés közben csak a lista törzsét cseréljük (a beviteli mező érintetlen marad); a szűrés nem animál. */
+function refreshBody() {
+  const box = document.getElementById('listbody');
+  if (!box) return;
+  const view = currentView();
+  box.replaceChildren(...listBody(view, sectionsFor(view)).flat().filter(Boolean));
+  snapshotRows(view, desktop.matches);
 }
 
 /** Új tétel összeállítása névből (+ opcionális mennyiségből), a korábbi azonos nevű tétel adataival előtöltve. */
 function newItemFrom(name, qty, unit, view) {
   const prev = remembered(name);
-  const dflt = defaultStoresForView(view);
+  const dflt = personFilter ? [] : defaultStoresForView(view);   // címzetti listában nem öröklünk boltot a legutóbbi nézetből
   const catIds = cats().map((c) => c.id);
   return {
     id: store.uuid(), name: prev ? prev.name : name, qty: qty || '', unit: unit || (prev ? prev.unit : '') || '', note: '',
@@ -546,13 +564,13 @@ function rejectDuplicate(item) {
   return true;
 }
 
-async function addItem(item, label) {
+async function addItem(item, explicit = false) {
   if (rejectDuplicate(item)) return false;
   await saveItem(item);
-  learnProduct(item, false);
+  learnProduct(item, explicit);
   const visible = Object.values(sectionsFor(currentView())).some((l) => l.some((i) => i.id === item.id));
   const q = formatQty(item.qty, item.unit);
-  let msg = `„${label || item.name}”${q ? ' (' + q + ')' : ''} hozzáadva`;
+  let msg = `„${item.name}”${q ? ' (' + q + ')' : ''} hozzáadva`;
   if (!visible) msg += ' – ebben a nézetben nem látszik';
   toast(msg, { label: 'Visszavonás', fn: () => removeRow('Items', item) });
   return true;
@@ -565,52 +583,162 @@ function smartDict() {
     people: peopleList().map((p) => ({ id: p.id, keys: entityKeys(p) })),
   };
 }
-let smartIgnore = new Set();   // a felhasználó által elutasított felismerések (×) – a következő hozzáadásig
+/**
+ * A lista tetején álló egyetlen beviteli mező. Gépelés közben (1) élőben szűri a listát, (2) javaslatokat ad a már ismert
+ * termékekből, (3) új névnél kitöltő panelt nyit (kategória, mennyiség, bolt, címzett), így nem kell utólag keresgélni.
+ * A DOM-ja az újrarajzolásokon át megmarad: a beírt szöveg és a félig kitöltött panel nem vész el szinkronnál.
+ */
+function createQuickBar() {
+  let view = ALL_VIEW;
+  let ignore = new Set();   // a felhasználó által elutasított felismerések (×) – a következő hozzáadásig
+  let panel = null;         // a nyitott kitöltő panel: {fields}
+  let rows = [];            // a javaslatlista sorai: {node, run}
+  let active = -1;          // a javaslatlistában kijelölt sor
+  let lastQuery = '';
 
-function quickAdd(view) {
-  const items = store.list('Items');
-  const dict = smartDict();
-  const parse = (t) => parseSmart(t, { ...dict, ignore: smartIgnore });
-  const dl = h('datalist', { id: 'sugg' });
+  const parse = () => parseSmart(input.value, { ...smartDict(), ignore });
+  const input = h('input', { type: 'text', placeholder: 'Keresés vagy új tétel… (pl. „alma 2 kg lidl”)', autocomplete: 'off', maxLength: 200,
+    role: 'combobox', 'aria-expanded': 'false', 'aria-controls': 'sugg', 'aria-label': 'Keresés vagy új tétel', oninput: () => onInput() });
+  const clearBtn = h('button', { type: 'button', class: 'x', title: 'Törlés', 'aria-label': 'Beírt szöveg törlése', onclick: () => { reset(); input.focus(); } }, icon('x', 16));
   const preview = h('div', { class: 'smart', 'aria-live': 'polite' });
-  const input = h('input', { type: 'text', id: 'q', placeholder: 'Új tétel… (pl. „alma 2 kg lidl”)', list: 'sugg', autocomplete: 'off', maxLength: 200, 'aria-label': 'Új tétel neve',
-    oninput: () => refresh() });
+  const suggBox = h('div', { class: 'sugg', id: 'sugg', role: 'listbox' });
+  const panelBox = h('div', { class: 'qpanel' });
+
+  const itemFor = (p, name) => {
+    const it = newItemFrom(name || p.name, p.qty, p.unit, view);
+    if (p.store) it.stores = [p.store];
+    if (p.person) it.for = p.person;
+    return it;
+  };
+  async function addNow(item, explicit) {
+    reset();
+    await addItem(item, explicit);
+    input.focus();
+  }
+  function reset() {
+    input.value = '';
+    ignore = new Set();
+    closePanel();
+    onInput();
+  }
+
   // Élő előnézet: mit ismert fel a sorból. A bolt/címzett chipje × -szel elutasítható (akkor a név része marad).
-  function refresh() {
-    const p = parse(input.value);
-    dl.replaceChildren(...suggestions([...items, ...store.list('Products')], p.name).map((s) => h('option', { value: s.name })));
+  function refreshPreview(p) {
     const chips = [];
     const q = formatQty(p.qty, p.unit);
     if (q) chips.push(h('span', { class: 'tag' }, q));
     const reject = (id) => h('button', { type: 'button', class: 'x', 'aria-label': 'Nem ezt értettem', title: 'Nem ezt értettem – maradjon a név része',
-      onclick: () => { smartIgnore.add(id); refresh(); input.focus(); } }, icon('x', 12));
+      onclick: () => { ignore.add(id); onInput(); input.focus(); } }, icon('x', 12));
     const st = p.store && storeTag(p.store, reject(p.store));
     if (st) chips.push(st);
     if (p.person) chips.push(personTag(p.person, reject(p.person)));
     preview.replaceChildren(...(chips.length && p.name ? [h('span', { class: 'smartname' }, '„' + p.name + '”'), ...chips] : []));
   }
-  const add = async () => {
-    const p = parse(input.value);
+
+  // Javaslatok: az ismert termékek / korábbi tételek, amelyek még nincsenek a listán; az utolsó sor a „részletekkel” út.
+  function refreshSuggest(p) {
+    const q = p.name;
+    rows = [];
+    if (q && !panel) {
+      const onList = new Set(store.list('Items').filter((i) => isOpen(i)).map((i) => nameKey(i.name)));
+      const pool = [...store.list('Items').filter((i) => !i.deleted), ...live('Products')];
+      const cands = suggestions(pool, q, 12).filter((s) => !onList.has(nameKey(s.name))).slice(0, 5);
+      for (const s of cands) {
+        const c = cats().find((x) => x.id === s.category);
+        rows.push({ run: () => addNow(itemFor(p, s.name)),
+          node: h('button', { type: 'button', class: 'sug', role: 'option' }, icon('plus', 16), h('span', {}, s.name),
+            h('span', { class: 'sub' }, [c && c.name, s.unit].filter(Boolean).join(' · '))) });
+      }
+      const known = !!remembered(q);
+      rows.push({ run: openPanel,
+        node: h('button', { type: 'button', class: 'sug new', role: 'option' }, icon('edit', 16), h('span', {}, known ? 'Részletek megadása…' : `Új tétel: „${q}”`)) });
+    }
+    if (active >= rows.length) active = -1;
+    rows.forEach((r, i) => {
+      r.node.id = 'sug' + i;
+      r.node.classList.toggle('active', i === active);
+      r.node.setAttribute('aria-selected', String(i === active));
+      r.node.addEventListener('mousedown', (e) => e.preventDefault());   // a mező megtartja a fókuszt (mobilon a billentyűzet nyitva marad)
+      r.node.addEventListener('click', r.run);
+    });
+    suggBox.replaceChildren(...rows.map((r) => r.node));
+    input.setAttribute('aria-expanded', String(rows.length > 0));
+    if (active >= 0) input.setAttribute('aria-activedescendant', 'sug' + active); else input.removeAttribute('aria-activedescendant');
+  }
+
+  function onInput() {
+    const p = parse();
+    clearBtn.style.display = input.value ? '' : 'none';
+    refreshPreview(p);
+    refreshSuggest(p);
+    if (p.name !== lastQuery) { lastQuery = p.name; refreshBody(); }   // a lista szűrése
+  }
+
+  // Kitöltő panel: ugyanaz a mezőkészlet, mint a szerkesztő ablakban; az ismert adatokkal (és kategória-tippel) előtöltve.
+  function openPanel() {
+    const p = parse();
+    if (!p.name) { input.focus(); return; }
+    const item = itemFor(p);
+    const prev = remembered(p.name);
+    const guess = prev && prev.category ? '' : guessCategory(live('Products'), p.name);
+    if (guess) item.category = guess;
+    panel = { fields: itemFields(item, { guessed: !!guess }) };
+    active = -1;
+    panelBox.replaceChildren(
+      h('div', { class: 'qfields' }, panel.fields.nodes),
+      h('div', { class: 'actions' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { closePanel(); input.focus(); } }, 'Mégse'),
+        h('button', { type: 'button', class: 'btn primary', onclick: submit }, 'Hozzáad')));
+    refreshSuggest(p);
+  }
+  function closePanel() {
+    if (!panel) return;
+    panel = null;
+    panelBox.replaceChildren();
+    refreshSuggest(parse());
+  }
+  async function submit() {
+    const p = parse();
+    if (!p.name) { input.focus(); return; }
+    await addNow({ ...itemFor(p), ...panel.fields.get() }, true);   // a kézzel állított kategória/egység a terméklistába is bekerül
+  }
+
+  // Enter / „Hozzáad”: ismert névnél azonnal felvesz, új névnél kitöltő panelt nyit.
+  function go() {
+    const p = parse();
     if (!p.name) return;
-    // A mezőt MENTÉS ELŐTT ürítjük: a mentés újrarenderel, és a régi (lecserélt) mező ürítése már hatástalan lenne.
-    input.value = '';
-    smartIgnore = new Set();
-    refresh();
-    const item = newItemFrom(p.name, p.qty, p.unit, view);
-    if (p.store) item.stores = [p.store];
-    if (p.person) item.for = p.person;
-    await addItem(item);
-    const q = document.getElementById('q'); if (q) q.focus();
-  };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') add(); });
-  return h('div', {},
+    if (remembered(p.name)) addNow(itemFor(p)); else openPanel();
+  }
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!rows.length) return;
+      e.preventDefault();
+      active = e.key === 'ArrowDown' ? (active + 1 >= rows.length ? -1 : active + 1) : (active < 0 ? rows.length - 1 : active - 1);
+      refreshSuggest(parse());
+    } else if (e.key === 'Enter') {
+      if (panel) submit(); else if (active >= 0) rows[active].run(); else go();
+    } else if (e.key === 'Escape') {
+      if (panel) closePanel(); else if (input.value) reset();
+    }
+  });
+
+  const node = h('div', {},
     h('div', { class: 'addbar' },
-      h('div', { class: 'field' }, icon('plus', 20), input, dl,
-        h('button', { class: 'btn text', onclick: add }, 'Hozzáad')),
-      h('button', { class: 'iconbtn', title: 'Részletes felvétel', 'aria-label': 'Részletes felvétel', onclick: () => openEditor(null, view) }, icon('edit', 20)),
+      h('div', { class: 'field' }, icon('search', 20), input, clearBtn, h('button', { class: 'btn text', onclick: go }, 'Hozzáad')),
+      h('button', { class: 'iconbtn', title: 'Részletek megadása', 'aria-label': 'Részletek megadása', onclick: () => (panel ? closePanel() : openPanel()) }, icon('edit', 20)),
       h('button', { class: 'iconbtn', title: 'Felvétel sablonból', 'aria-label': 'Felvétel sablonból', onclick: () => openApplyTemplate('') }, icon('template', 20))),
-    preview);
+    preview, suggBox, panelBox);
+  clearBtn.style.display = 'none';
+  return {
+    node,
+    query: () => parse().name,
+    /** Listaváltáskor: a szűrő és a panel nullázása (a lista ne maradjon láthatatlanul szűrve). */
+    clear() { input.value = ''; ignore = new Set(); closePanel(); lastQuery = ''; clearBtn.style.display = 'none'; const p = parse(); refreshPreview(p); refreshSuggest(p); },
+    /** Újrarajzoláskor: a nézet és az adatok frissültek (a beírt szöveg és a panel marad). */
+    update(v) { view = v; const p = parse(); lastQuery = p.name; refreshPreview(p); refreshSuggest(p); },
+  };
 }
+const quickBar = createQuickBar();
 
 /** Gyakran vett, de most nem a listán lévő tételek – egy koppintással újra felvehetők. */
 function frequentChips(view) {
@@ -621,9 +749,9 @@ function frequentChips(view) {
       icon('plus', 14), it.name)));
 }
 
-function renderSections(sec, view) {
+function renderSections(sec, view, filtered = false) {
   const any = openCount(sec) + sec.cart.length;
-  if (!any) return h('div', { class: 'empty' }, 'Nincs megjeleníthető tétel. Írd be fent, mit kell venni.');
+  if (!any) return h('div', { class: 'empty' }, filtered ? 'Nincs találat a listán.' : 'Nincs megjeleníthető tétel. Írd be fent, mit kell venni.');
   const title = personFilter ? personName(personFilter) + ' listája' : view.all ? 'Összes' : 'Ide való';
   const parts = [];
   // „Egy listában” mód: a nézet beállítása (Views.merged); csak valódi nézetben van értelme, ahol vannak más szakaszok is
@@ -777,22 +905,22 @@ function tableBody(list, o, catList) {
 
 // ---- Űrlap-segédek (a szerkesztő ablakok közösen használják) ----
 /** Kategória-választó; az utolsó „Egyéb” az ismeretlen / üres kategóriához. */
-const categorySelect = (current, onchange) => h('select', { onchange },
-  cats().map((c) => h('option', { value: c.id, selected: c.id === current }, c.name)),
-  h('option', { value: '', selected: !cats().some((c) => c.id === current) }, 'Egyéb'));
+const categorySelect = (current) => h('select', {},
+  cats().map((c) => h('option', { value: c.id, selected: c.id === current || (c.id === 'egyeb' && !cats().some((x) => x.id === current)) }, c.name)),
+  cats().some((c) => c.id === 'egyeb') ? null : h('option', { value: '', selected: !cats().some((c) => c.id === current) }, 'Egyéb'));
 /** Címzett-választó; emptyLabel = az üres érték felirata. */
 const personSelect = (current, emptyLabel) => h('select', {},
   h('option', { value: '', selected: !current }, emptyLabel),
   peopleList().map((p) => h('option', { value: p.id, selected: p.id === current }, p.id === me() ? p.name + ' (én)' : p.name)));
-/** Bolt-jelölőnégyzetek. -> {boxes:[{id, el}], node, get: kijelölt bolt-id-k} */
-function storeChecks(selected, onchange) {
-  const boxes = storesList().map((s) => ({ id: s.id, name: s.name, el: h('input', { type: 'checkbox', checked: selected.includes(s.id), onchange }) }));
-  return { boxes, node: h('div', { class: 'checks' }, boxes.map((b) => h('label', {}, b.el, b.name))), get: () => boxes.filter((b) => b.el.checked).map((b) => b.id) };
+/** Bolt-jelölőnégyzetek. -> {node, get: kijelölt bolt-id-k} */
+function storeChecks(selected) {
+  const boxes = storesList().map((s) => ({ id: s.id, name: s.name, el: h('input', { type: 'checkbox', checked: selected.includes(s.id) }) }));
+  return { node: h('div', { class: 'checks' }, boxes.map((b) => h('label', {}, b.el, b.name))), get: () => boxes.filter((b) => b.el.checked).map((b) => b.id) };
 }
 
 // ---- Dialógus-segéd ----
 const coarsePointer = matchMedia('(pointer: coarse)');
-const BUILD = 'v32';   // = a sw.js gyorsítótár-verziója; a Fiók oldalon látszik, hogy az eszközön melyik kód fut
+const BUILD = 'v34';   // = a sw.js gyorsítótár-verziója; a Fiók oldalon látszik, hogy az eszközön melyik kód fut
 function modal(build, cls) {
   const dlg = h('dialog', { class: cls || '' });
   // A natív append a null-t „null”, a tömböt „[object …]” szövegként szúrná be → itt lapítunk és szűrünk.
@@ -906,53 +1034,50 @@ function openPersonPicker(it, save) {
   }, 'compact');
 }
 
-// ---- Tétel szerkesztő ----
-function openEditor(item, view) {
-  const isNew = !item;
-  const it = item || { ...newItemFrom('', '', '', view || currentView()), category: 'egyeb' };
+// ---- Tétel mezők és szerkesztő ----
+/**
+ * A tétel szerkeszthető mezői (mennyiség, kategória, boltok, címzett) – a beviteli sáv kitöltő panelje és a szerkesztő ablak
+ * közösen használja. -> {nodes, get}; opts.guessed: a kategória csak tipp (a felirat jelzi).
+ */
+function itemFields(it, opts = {}) {
+  const ctl = qtyControl(it.qty, it.unit);
+  const category = categorySelect(it.category);
+  const forWho = personSelect(it.for, 'közös (háztartás)');
+  const stores = storeChecks(it.stores);
+  const lab = (t) => h('label', { class: 'f' }, t);
+  return {
+    nodes: [
+      lab('Mennyiség'), ctl.node,
+      h('div', { class: 'two' }, h('div', {}, lab(opts.guessed ? 'Kategória (tipp)' : 'Kategória'), category), h('div', {}, lab('Címzett'), forWho)),
+      lab('Boltok (üres = bárhol megvehető)'), stores.node,
+    ],
+    get: () => { const q = ctl.get(); return { qty: q.qty, unit: q.qty ? q.unit : '', category: category.value, stores: stores.get(), for: forWho.value }; },
+  };
+}
+
+function openEditor(it) {
   modal((dlg, close) => {
-    let touched = false;   // a felhasználó kézzel állított-e kategóriát/boltot (akkor nem írjuk felül előtöltéssel)
-    const f = {
-      name: h('input', { type: 'text', value: it.name, maxLength: 200 }),
-      category: categorySelect(it.category, () => { touched = true; }),
-      forWho: personSelect(it.for, 'közös (háztartás)'),
-      urgent: h('input', { type: 'checkbox', checked: it.urgent }),
-      note: h('textarea', { rows: 2, maxLength: 500, value: it.note }),
-    };
-    let ctl = qtyControl(it.qty, it.unit);
-    const qtyWrap = h('div', {}, ctl.node);
+    const name = h('input', { type: 'text', value: it.name, maxLength: 200 });
+    const urgent = h('input', { type: 'checkbox', checked: it.urgent });
+    const note = h('textarea', { rows: 2, maxLength: 500, value: it.note });
+    const fields = itemFields(it);
     const errMsg = h('p', { class: 'err', role: 'alert' });
-    const stores = storeChecks(it.stores, () => { touched = true; });
-    // Új tételnél a név alapján előtöltjük a korábbi kategóriát, egységet, boltokat.
-    if (isNew) f.name.addEventListener('change', () => {
-      const prev = remembered(f.name.value);
-      if (!prev || touched) return;
-      if (cats().some((c) => c.id === prev.category)) f.category.value = prev.category;
-      if (!ctl.get().qty && prev.unit) { ctl = qtyControl('', prev.unit); qtyWrap.replaceChildren(ctl.node); }
-      if (!defaultStoresForView(view || currentView()).length) stores.boxes.forEach((b) => { b.el.checked = prev.stores.includes(b.id); });
-    });
     dlg.append(
-      h('h3', {}, isNew ? 'Új tétel' : 'Tétel szerkesztése'),
-      h('label', { class: 'f' }, 'Név'), f.name,
-      h('label', { class: 'f' }, 'Mennyiség'), qtyWrap,
-      h('label', { class: 'f' }, 'Kategória'), f.category,
-      h('label', { class: 'f' }, 'Boltok (üres = bárhol megvehető)'),
-      stores.node,
-      h('label', { class: 'f' }, 'Címzett'), f.forWho,
-      h('label', { class: 'sw' }, f.urgent, 'Sürgős'),
-      h('label', { class: 'f' }, 'Megjegyzés'), f.note,
+      h('h3', {}, 'Tétel szerkesztése'),
+      h('label', { class: 'f' }, 'Név'), name,
+      fields.nodes,
+      h('label', { class: 'sw' }, urgent, 'Sürgős'),
+      h('label', { class: 'f' }, 'Megjegyzés'), note,
       h('div', { class: 'actions' },
-        isNew ? null : h('button', { class: 'btn danger', onclick: async () => {
+        h('button', { class: 'btn danger', onclick: async () => {
           await removeRow('Items', it); close();
           toast(`„${it.name}” törölve`, { label: 'Visszavonás', fn: () => saveItem({ ...it, deleted: false }) });
         } }, 'Törlés'),
         h('button', { class: 'btn', onclick: close }, 'Mégse'),
         h('button', { class: 'btn primary', onclick: async () => {
-          const name = f.name.value.trim();
-          if (!name) { f.name.focus(); return; }
-          const q = ctl.get();
-          const next = { ...it, name, qty: q.qty, unit: q.qty ? q.unit : '', note: f.note.value.trim(), category: f.category.value,
-            stores: stores.get(), for: f.forWho.value, urgent: f.urgent.checked };
+          const nm = name.value.trim();
+          if (!nm) { name.focus(); return; }
+          const next = { ...it, ...fields.get(), name: nm, note: note.value.trim(), urgent: urgent.checked };
           // ugyanilyen (név + címzett + bolt) tétel már van → nem mentjük, szólunk az ablakban
           const dup = !next.deleted && !(next.bought_at > 0) && findDuplicate(store.list('Items'), next);
           if (dup) {
@@ -965,7 +1090,7 @@ function openEditor(item, view) {
           close();
         } }, 'Mentés')),
       errMsg);
-    f.name.focus();
+    name.focus();
   });
 }
 
