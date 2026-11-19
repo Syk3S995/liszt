@@ -8,7 +8,7 @@ import * as store from './store.js';
 import * as backend from './backend.js';
 import * as rt from './realtime.js';
 
-const OVERLAP_MS = 5000;           // a kézi Sheet-szerkesztés és a zárak miatti időcsúszás ellen (a merge idempotens)
+const OVERLAP_MS = 5000;           // a kézi adatbázis-szerkesztés és a párhuzamos tranzakciók miatti időcsúszás ellen (a merge idempotens)
 const BATCH_DELAY = 800;           // ennyi csend után megy fel a köteg
 const SYNC_BATCH = 200;            // egy kérésben legfeljebb ennyi változás (a szerver 500 fölött elutasítja)
 const POLL_MS = 3 * 60 * 1000;     // háttér-ellenőrzés látható oldalnál (Realtime nélkül)
@@ -131,6 +131,7 @@ export async function runSync({ full = false, manual = false } = {}) {
       await store.clearQueue(sent);
       const data = res.data || {};
       await store.applyIncoming(data);
+      if (full) await store.pruneToServer(data);   // a szerveren nem létező helyi sorok (pl. régi, feltöltetlen adat) kikerülnek
       await store.setMeta('since', Math.max(0, Number(res.serverTime) - OVERLAP_MS));
       await store.setMeta('dataVersion', String(res.version || ''));
       const recv = Object.values(data).reduce((s, l) => s + (Array.isArray(l) ? l.length : 0), 0);

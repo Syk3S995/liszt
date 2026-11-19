@@ -109,6 +109,56 @@ export async function applyIncoming(data) {
   if (changed) emit();
 }
 
+/**
+ * Teljes újratöltés után: a szerveren nem létező helyi sorok eltávolítása (a feltöltésre váró sorok maradnak).
+ * Csak since=0 válasznál hívható – ott a szerver az összes sort visszaadja.
+ */
+export async function pruneToServer(data) {
+  const x = tx(TABLES, 'readwrite');
+  let removed = 0;
+  for (const t of TABLES) {
+    const ids = new Set((data[t] || []).map((w) => String(w.id)));
+    for (const id of [...state[t].keys()]) {
+      if (ids.has(id) || queue.has(t + '|' + id)) continue;
+      state[t].delete(id);
+      x.objectStore(t).delete(id);
+      removed++;
+    }
+  }
+  await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
+  if (removed) emit();
+  return removed;
+}
+
+/**
+ * Mentésfájlból (export) érkező sorok felvétele a szinkronsorba. Az eredeti updated_at megmarad, így egy újabb
+ * (helyi vagy szerveroldali) sort nem ír felül; a People e-mailje nem importálható, meglévő személyt nem módosít.
+ * -> {added, updated}
+ */
+export async function importRows(t, rows) {
+  if (!TABLES.includes(t) || !Array.isArray(rows)) return { added: 0, updated: 0 };
+  let added = 0, updated = 0;
+  const x = tx([t, 'queue'], 'readwrite');
+  for (const w of rows) {
+    if (!w || typeof w !== 'object') continue;
+    const row = fromWire(t, w);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(row.id)) continue;
+    const local = state[t].get(row.id);
+    if (t === 'People') { if (local) continue; row.email = ''; }
+    if (local && local.updated_at >= row.updated_at) continue;
+    delete row.server_ts;
+    state[t].set(row.id, row);
+    const q = { key: t + '|' + row.id, t, r: row };
+    queue.set(q.key, q);
+    x.objectStore(t).put(row);
+    x.objectStore('queue').put(q);
+    if (local) updated++; else added++;
+  }
+  await new Promise((res, rej) => { x.oncomplete = res; x.onerror = () => rej(x.error); });
+  if (added || updated) emit();
+  return { added, updated };
+}
+
 /** Minden helyi adat törlése (kijelentkezés + teljes újratöltés előtt). */
 export async function wipeData(keepQueue = false) {
   const names = keepQueue ? TABLES : [...TABLES, 'queue'];

@@ -126,7 +126,7 @@ async function learnProduct(item, explicit) {
   }
 }
 
-// Az alapadatot (kategóriák + terméklista) a szerver írja a Sheetbe (GAS setup / resetAll) – az app semmit nem tölt fel magától.
+// Az alapadatot (kategóriák, mennyiségek, terméklista) a szerver adatbázisa tartalmazza (supabase/migrations/0002_seed.sql) – az app semmit nem tölt fel magától.
 
 // ---- Render ----
 function render() {
@@ -403,7 +403,9 @@ function accountView() {
       h('div', { class: 'sechead' }, h('span', {}, 'Adatok mentése')),
       h('div', { class: 'card pad' },
         h('p', { class: 'muted small', style: 'margin:0 0 10px' }, 'Az ingyenes szerver nem készít automatikus mentést, ezért időnként érdemes letölteni az adatokat. A fájl ezen az eszközön lévő (utoljára szinkronizált) adatot tartalmazza.'),
-        h('button', { class: 'btn', onclick: exportData }, 'Adatok exportálása (JSON)'))),
+        h('div', { class: 'actions', style: 'justify-content:flex-start' },
+          h('button', { class: 'btn', onclick: exportData }, 'Adatok exportálása (JSON)'),
+          h('button', { class: 'btn', onclick: importData }, 'Importálás mentésfájlból…')))),
     h('section', { class: 'sec' },
       h('div', { class: 'sechead' }, h('span', {}, 'Megjelenés')),
       h('div', { class: 'card pad' },
@@ -1359,7 +1361,7 @@ function openManageEditor(tab, row) {
       h('h3', {}, isNew ? 'Új ' + m.one : m.One + ' szerkesztése'),
       h('label', { class: 'f' }, 'Név'), name,
       step ? h('div', {}, h('label', { class: 'f' }, 'Lépésköz (a + / − gombnál)'), step) : null,
-      tab === 'people' && base.email ? h('p', { class: 'muted small' }, `Belépési e-mail: ${base.email} (csak a Sheetben módosítható)`) : null,
+      tab === 'people' && base.email ? h('p', { class: 'muted small' }, `Belépési e-mail: ${base.email} (csak a Supabase Table Editorban módosítható)`) : null,
       hasKw ? h('div', {}, h('label', { class: 'f' }, 'Keresőszavak a gyors bevitelhez (vesszővel elválasztva)'), kw,
         h('p', { class: 'muted small', style: 'margin:4px 0 0' }, 'A nevet magától is felismeri, kis- és nagybetűtől, ékezettől és ragtól függetlenül (pl. „Lidlbe”, „nagyinak”). Ide csak a becenevek, más írásmódok kellenek.')) : null,
       forSel ? h('div', {}, h('label', { class: 'f' }, 'Alapértelmezett címzett (pl. „Hétvégi ház”)'), forSel) : null,
@@ -1400,6 +1402,34 @@ function openManageEditor(tab, row) {
     markSw(); markIc(); paintPreview();
     name.focus();
   });
+}
+
+/** Mentésfájl (export) betöltése: a sorok a szinkronsorba kerülnek, és feltöltődnek a szerverre. Újabb sort nem ír felül. */
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'application/json,.json';
+  input.onchange = async () => {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    try {
+      if (f.size > 20 * 1024 * 1024) throw new Error('size');
+      const data = JSON.parse(await f.text());
+      const tables = data && data.app === 'liszt' && data.tables;
+      if (!tables || typeof tables !== 'object') throw new Error('format');
+      const counts = store.TABLES.map((t) => [t, Array.isArray(tables[t]) ? tables[t].length : 0]).filter(([, n]) => n);
+      if (!counts.length) throw new Error('empty');
+      const sum = counts.map(([t, n]) => `${TABLE_LABEL[t] || t}: ${n}`).join(', ');
+      if (!confirm(`Importálod a mentést? (${sum})\nCsak az újabb vagy hiányzó sorok kerülnek fel, a meglévő újabb adatot nem írja felül.`)) return;
+      let added = 0, updated = 0;
+      for (const [t] of counts) { const r = await store.importRows(t, tables[t]); added += r.added; updated += r.updated; }
+      sync.localChanged();
+      toast(`Importálva: ${added} új, ${updated} frissített sor`);
+    } catch (e) {
+      console.warn('import hiba', e);
+      toast('Az import nem sikerült: nem megfelelő mentésfájl.');
+    }
+  };
+  input.click();
 }
 
 /** Minden helyi adat letöltése JSON-fájlként (kézi mentés). */
