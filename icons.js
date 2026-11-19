@@ -60,8 +60,9 @@ export const CAT_ICONS = ['apple', 'leaf', 'bread', 'milk', 'cheese', 'egg', 'me
   'bottle', 'coffee', 'wine', 'home', 'soap', 'pill', 'baby', 'paw', 'box', 'tag'];
 
 /** Címzett-ikonok (személy, hely, háziállat…). */
-export const PERSON_ICONS = ['user', 'home', 'cabin', 'baby', 'paw', 'heart', 'tag'];
-export const personIconName = (p) => (p && PERSON_ICONS.includes(p.icon) ? p.icon : 'user');
+export const PERSON_ICONS = ['user', 'cabin', 'baby', 'paw', 'heart', 'tag'];
+// a korábbi „home” ikon (keskenyebb ház) a „cabin” (szélesebb) lett: a már így mentett címzettek is azt kapják
+export const personIconName = (p) => { const i = p && p.icon === 'home' ? 'cabin' : p && p.icon; return PERSON_ICONS.includes(i) ? i : 'user'; };
 
 /** Sablon-ikonok. */
 export const TEMPLATE_ICONS = ['template', 'cart', 'home', 'cabin', 'heart', 'apple', 'bread', 'coffee', 'wine', 'soap', 'baby', 'paw', 'box', 'tag'];
@@ -72,7 +73,7 @@ const DEFAULT_CAT_ICON = { 'zoldseg-gyumolcs': 'apple', pekaru: 'bread', tejterm
   szarazaru: 'jar', ital: 'bottle', haztartas: 'home', drogeria: 'soap', egyeb: 'box' };
 export function catIconName(cat) {
   if (cat && CAT_ICONS.includes(cat.icon)) return cat.icon;
-  return (cat && DEFAULT_CAT_ICON[cat.id]) || 'box';
+  return (cat && Object.hasOwn(DEFAULT_CAT_ICON, cat.id) && DEFAULT_CAT_ICON[cat.id]) || 'box';
 }
 
 export function icon(name, size = 20) {

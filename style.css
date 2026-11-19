@@ -45,8 +45,7 @@ button { cursor: pointer; }
 .topbar .grow { flex: 1; }
 .logo { width: 30px; height: 30px; border-radius: 8px; flex: none; }
 .logo-lg { width: 96px; height: 96px; border-radius: 22px; display: block; margin: 0 auto 12px; }
-.pagetitle { display: flex; align-items: center; gap: 10px; }
-.pagetitle { font-weight: 500; font-size: 1.05rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pagetitle { display: flex; align-items: center; gap: 10px; font-weight: 500; font-size: 1.05rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .iconbtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 40px; height: 40px; border: 0; background: transparent; border-radius: 20px; padding: 0 10px; color: var(--muted); }
 .iconbtn:hover { background: var(--surface-2); }
 .iconbtn.flag.on { color: var(--urgent); }
@@ -120,7 +119,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--primary); o
 .sechead .count { background: var(--surface-2); border-radius: 10px; padding: 0 8px; font-size: .78rem; }
 .sechead .grow { flex: 1; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
-.cathead { display: flex; align-items: center; gap: 8px; padding: 8px 14px 4px; font-size: .82rem; font-weight: 500; color: var(--muted); background: var(--surface); }
+.cathead { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: .82rem; font-weight: 500; color: var(--text); background: var(--cat-bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; display: inline-block; }
 
 /* mobil sor */
@@ -129,7 +128,6 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--primary); o
 .row + .row { background: linear-gradient(var(--line), var(--line)) 0 0 / 100% 1px no-repeat; }
 .row.ck + .row.ck { background-position: 42px 0; background-size: calc(100% - 42px) 1px; }
 /* Kategória-fejléc: szürke sáv, hogy jól elváljanak a csoportok */
-.cathead { padding: 6px 14px; background: var(--cat-bg); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--text); }
 .card > .cathead:first-child { border-top: 0; }
 .cathead .n, .tbl tr.cat .n { margin-left: auto; font-size: .75rem; color: var(--muted); font-weight: 400; }
 .row .cell { flex: 1; min-width: 0; cursor: pointer; }
@@ -161,26 +159,24 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--primary); 
 .tag { border-radius: 10px; padding: 0 9px; font-size: .78rem; background: var(--surface-2); color: var(--text); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .tag.person { --c: var(--primary); background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--text); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
 .tag.person .ico { color: var(--c); }
-.just-added { animation: flash 1.6s ease-out; }
-@keyframes flash { from { background: var(--primary-soft); } to { background: transparent; } }
 
 /* asztali táblázat */
 table.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .tbl th { text-align: left; font-weight: 500; font-size: .78rem; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
 .tbl td { padding: 7px 10px; border-top: 1px solid var(--line); vertical-align: middle; }
 .tbl tr:first-child td { border-top: 0; }
-.tbl tr.cat td { background: var(--surface-2); font-size: .8rem; font-weight: 500; color: var(--muted); padding: 5px 10px; }
+.tbl tr.cat td { background: var(--cat-bg); color: var(--text); font-size: .8rem; font-weight: 500; padding: 6px 10px; }
 .tbl tr.item:hover { background: var(--surface-2); }
 .tbl .ct { display: flex; gap: 10px; align-items: center; }
 .tbl td.name { cursor: pointer; }
 .tbl .tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .tbl td.q { white-space: nowrap; text-align: right; padding-right: 16px; }
-.tbl tr.cat td { background: var(--cat-bg); color: var(--text); padding: 6px 10px; }
 .tbl tr.cat .ct { gap: 8px; }
 
 /* ----- Kezelés ----- */
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 20px; padding: 3px; margin-bottom: 14px; }
 .seg button { border: 0; background: transparent; padding: 6px 16px; border-radius: 17px; color: var(--muted); white-space: nowrap; }
+.seg button.active { background: var(--surface); color: var(--primary); font-weight: 500; box-shadow: var(--shadow); }
 @media (max-width: 899px) {
   .seg { display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .seg::-webkit-scrollbar { display: none; }
@@ -267,7 +263,6 @@ table.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .tplpick .mrow:hover { background: var(--surface-2); }
 .applylist { max-height: 55vh; overflow-y: auto; }
 .applylist .row { cursor: pointer; }
-.seg button.active { background: var(--surface); color: var(--primary); font-weight: 500; box-shadow: var(--shadow); }
 .mrow { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); }
 .mrow:first-child { border-top: 0; }
 .mrow .cell { flex: 1; min-width: 0; }
@@ -278,7 +273,7 @@ table.tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .empty { color: var(--muted); text-align: center; padding: 28px 0; }
 
 /* ----- Párbeszédablak ----- */
-dialog { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); width: min(92vw, 460px); padding: 20px; max-height: 92vh; }
+dialog { border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--text); width: min(92vw, 460px); padding: 20px; max-height: 92vh; overflow-y: auto; }
 dialog::backdrop { background: rgba(0, 0, 0, .4); }
 dialog h3 { margin: 0 0 6px; font-weight: 500; font-size: 1.15rem; }
 dialog label.f { display: block; font-size: .8rem; color: var(--muted); margin: 12px 0 4px; }
@@ -299,14 +294,13 @@ input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
 .iconpick.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .previewrow { margin-top: 14px; padding: 10px 12px; background: var(--surface-2); border-radius: 10px; }
 .preview { display: inline-flex; align-items: center; gap: 10px; font-weight: 500; }
-dialog { overflow-y: auto; }
 @media (max-width: 899px) {
   dialog { margin: auto 0 0; width: 100%; max-width: none; border-radius: 20px 20px 0 0; }
 }
-#toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px); transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 10px; max-width: 90vw; transition: opacity .2s, transform .2s; z-index: 60; }
+#toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 84px); transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 10px; transition: opacity .2s, transform .2s; z-index: 60;
+  display: flex; align-items: center; gap: 14px; width: max-content; max-width: min(92vw, 520px); }
 @media (min-width: 900px) { #toast { bottom: 28px; } }
 #toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-#toast { display: flex; align-items: center; gap: 14px; width: max-content; max-width: min(92vw, 520px); }
 #toast > span { flex: 1 1 auto; min-width: 0; overflow-wrap: normal; }
 .toastbtn { border: 0; background: transparent; color: var(--toast-btn); font-weight: 500; padding: 4px 6px; border-radius: 6px; white-space: nowrap; }
 
@@ -356,7 +350,7 @@ dialog.compact { width: min(92vw, 380px); }
 @keyframes row-flash { from { box-shadow: inset 0 0 0 999px var(--primary-soft); } to { box-shadow: inset 0 0 0 999px transparent; } }
 @keyframes row-out { from { max-height: 120px; opacity: 1; } to { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; } }
 .row.enter { animation: row-in .3s ease-out, row-flash 1.5s ease-out; }
-tr.item.enter > td { animation: row-flash 1.5s ease-out; }
+.row.flash, tr.item.flash > td, tr.item.enter > td { animation: row-flash 1.5s ease-out; }
 .leaving { pointer-events: none; overflow: hidden; animation: row-out .45s ease-in forwards;
   box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--urgent) 14%, transparent); }
 /* Csökkentett mozgás (pl. Android „Animációk eltávolítása”): a jelzés marad, de mozgás nélkül */

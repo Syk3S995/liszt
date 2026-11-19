@@ -77,13 +77,15 @@ const LOG_MAX = 20;
 export function getSyncInfo() {
   return { running, lastOk: store.getMeta('lastSyncOk', 0), lastError: store.getMeta('lastSyncError', null), log: store.getMeta('syncLog', []) };
 }
+/** A sikeres futások fajtái (a Fiók oldali napló és az átlagidő is ezt használja). */
+export const isOkRun = (kind) => kind === 'ok' || kind === 'same' || kind === 'fix';
 async function logRun(entry) {
   const log = [entry, ...store.getMeta('syncLog', [])].slice(0, LOG_MAX);
   await store.setMeta('syncLog', log);
-  if (entry.kind === 'ok' || entry.kind === 'same' || entry.kind === 'fix') await store.setMeta('lastSyncOk', entry.at);
+  if (isOkRun(entry.kind)) await store.setMeta('lastSyncOk', entry.at);
   else await store.setMeta('lastSyncError', { at: entry.at, text: entry.err || entry.kind });
 }
-const ERR_TEXT = { auth: 'Lejárt bejelentkezés', busy: 'A szerver foglalt, újrapróbálja', not_allowed: 'Ez az e-mail-cím nincs engedélyezve', too_many_changes: 'Túl sok változás egyszerre', server_error: 'Szerverhiba', bad_request: 'Hibás kérés' };
+const ERR_TEXT = { auth: 'Lejárt bejelentkezés', not_allowed: 'Ez az e-mail-cím nincs engedélyezve', too_many_changes: 'Túl sok változás egyszerre' };
 
 /**
  * full: teljes újratöltés (since=0, verzió nélkül). Kézi indításnál (Szinkron most) a jelző is pörög;
@@ -93,11 +95,11 @@ export async function runSync({ full = false, manual = false } = {}) {
   if (!backend.enabled()) return;
   clearTimeout(batchTimer);
   if (running) { again = true; return; }
-  const auth = await ensureAuth();
-  if (!authValid(auth)) { setStatus('auth', 'Jelentkezz be a szinkronhoz'); return; }
-  if (!navigator.onLine) { setStatus('offline', pendingText('Offline')); return; }
+  running = true;   // már a megújítás előtt: két párhuzamos futás ne indulhasson
+  const auth = await ensureAuth().catch(() => getAuth());
+  if (!authValid(auth)) { running = false; setStatus('auth', 'Jelentkezz be a szinkronhoz'); return; }
+  if (!navigator.onLine) { running = false; setStatus('offline', pendingText('Offline')); return; }
   clearTimeout(retryTimer);
-  running = true;
   lastRun = Date.now();
   const queue = store.getQueue();
   const sent = queue.slice(0, SYNC_BATCH);
@@ -126,7 +128,6 @@ export async function runSync({ full = false, manual = false } = {}) {
       return;
     }
     retryDelay = RETRY_MIN;
-    if (res.token && res.exp) await setAuth({ ...auth, token: res.token, exp: res.exp }); // csúszó lejárat
     if (res.unchanged) {
       await logRun({ ...base, ms: Date.now() - t0, kind: 'same' });
     } else {
@@ -144,7 +145,7 @@ export async function runSync({ full = false, manual = false } = {}) {
     startRealtime();
   } catch (e) {
     console.warn('sync hiba', e);
-    await logRun({ ...base, ms: Date.now() - t0, kind: navigator.onLine ? 'error' : 'offline', err: navigator.onLine ? 'Hálózati hiba' : 'Nincs kapcsolat' });
+    await logRun({ ...base, ms: Date.now() - t0, kind: navigator.onLine ? 'error' : 'offline', err: !navigator.onLine ? 'Nincs kapcsolat' : String(e.message).startsWith('http_') ? 'Szerverhiba (' + e.message.slice(5) + ')' : 'Hálózati hiba' });
     setStatus(navigator.onLine ? 'error' : 'offline', pendingText(navigator.onLine ? 'Hiba' : 'Offline'));
     if (navigator.onLine) scheduleRetry();
   } finally {

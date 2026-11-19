@@ -5,7 +5,7 @@ import * as backend from './backend.js';
 import { icon, CAT_ICONS, catIconName, PERSON_ICONS, personIconName, TEMPLATE_ICONS, templateIconName } from './icons.js';
 import { buildSections, groupByCategory, categoryOrder, suggestions, defaultStoresForView, renumber, safeColor,
   UNITS, setUnits, formatQty, stepQty, journal, frequent, dayKey, parseSmart, entityKeys, templatePlan, templateItemsFrom, mergeSections,
-  findDuplicate, addQty, findProduct } from './logic.js';
+  findDuplicate, addQty, findProduct, normText } from './logic.js';
 
 const $app = document.getElementById('app');
 const ALL_VIEW = { id: '__all', name: 'Összes', all: true, stores: [], include_unassigned: true, show_others: true, show_people: true };
@@ -23,7 +23,6 @@ let manageTab = 'categories';      // 'categories' | 'stores' | 'people' | 'view
 let templateId = '';               // a megnyitott sablon (page === 'template')
 let journalDays = 14;              // ennyi napot mutat a napló (a „Régebbiek” növeli)
 let needLogin = false;
-let lastAddedId = null;
 
 // ---- DOM segéd: kizárólag textContent / property, soha innerHTML (XSS ellen) ----
 function h(tag, props = {}, ...children) {
@@ -81,9 +80,10 @@ const openCount = (s) => s.here.length + s.elsewhere.length + s.people.length;
 
 async function saveRow(t, row) { const r = await store.save(t, row, authEmail()); sync.localChanged(); return r; }
 async function saveItem(it) { return saveRow('Items', it); }
+const removeRow = (t, row) => saveRow(t, { ...row, deleted: true });   // puha törlés + szinkron
 
 function slug(name, taken) {
-  let s = String(name).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+  let s = normText(name).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
   if (!s || taken.has(s)) s = (s || 'x') + '-' + store.uuid().slice(0, 4);
   return s;
 }
@@ -325,17 +325,23 @@ function navPopover(anchor, content, key) {
 const popItem = (lead, label, count, sel, onclick) => h('button', { class: 'moreitem' + (sel ? ' sel' : ''), role: 'menuitem', onclick },
   lead, h('span', { class: 'grow' }, label), count ? h('span', { class: 'n' }, count) : null);
 
+// Listaváltás (nézet vagy címzett) és a listák nyitott tételszáma – a listaválasztó és az oldalsáv közös
+const showView = (v) => { personFilter = ''; viewId = v.id; ls.set('viewId', viewId); ls.set('person', ''); };
+const showPerson = (p) => { personFilter = p.id; ls.set('person', personFilter); };
+const viewCount = (v, items) => openCount(buildSections(items, v, me(), { catOrder: catOrder() }));
+const personCount = (p, items) => items.filter((i) => isOpen(i) && !i.checked && i.for === p.id).length;
+
 /** Listaválasztó: nézetek és címzettek listái, ikonnal és nyitott tételszámmal; görgethető. */
 function openListPicker(anchor) {
   const items = store.list('Items');
   const pick = (fn) => { closeNavPop(); go('list', fn); };
   navPopover(anchor, [
     h('div', { class: 'poptitle' }, 'Nézetek'),
-    [ALL_VIEW, ...live('Views').sort(bySort)].map((v) => popItem(viewBadge(v, 18), v.name, openCount(buildSections(items, v, me(), { catOrder: catOrder() })),
-      page === 'list' && !personFilter && v.id === viewId, () => pick(() => { personFilter = ''; viewId = v.id; ls.set('viewId', viewId); ls.set('person', ''); }))),
+    [ALL_VIEW, ...live('Views').sort(bySort)].map((v) => popItem(viewBadge(v, 18), v.name, viewCount(v, items),
+      page === 'list' && !personFilter && v.id === viewId, () => pick(() => showView(v)))),
     h('div', { class: 'poptitle' }, 'Címzettek listái'),
-    peopleList().map((p) => popItem(personBadge(p, 18), p.name, items.filter((i) => isOpen(i) && !i.checked && i.for === p.id).length,
-      page === 'list' && personFilter === p.id, () => pick(() => { personFilter = p.id; ls.set('person', personFilter); }))),
+    peopleList().map((p) => popItem(personBadge(p, 18), p.name, personCount(p, items),
+      page === 'list' && personFilter === p.id, () => pick(() => showPerson(p)))),
   ], 'lists');
 }
 
@@ -347,11 +353,11 @@ function sidebar(view) {
     ic.nodeType ? ic : icon(ic, 20), h('span', { class: 'lbl' }, label), count != null ? h('span', { class: 'n' }, count) : null);
   return h('nav', { class: 'sidebar', 'aria-label': 'Fő navigáció' },
     h('div', { class: 'grouptitle' }, 'Nézetek'),
-    views.map((v) => nav(viewBadge(v), v.name, openCount(buildSections(items, v, me(), { catOrder: catOrder() })),
-      page === 'list' && !personFilter && v.id === view.id, () => go('list', () => { personFilter = ''; viewId = v.id; ls.set('viewId', viewId); ls.set('person', ''); }))),
+    views.map((v) => nav(viewBadge(v), v.name, viewCount(v, items),
+      page === 'list' && !personFilter && v.id === view.id, () => go('list', () => showView(v)))),
     h('div', { class: 'grouptitle' }, 'Címzettek'),
-    peopleList().map((p) => nav(personBadge(p, 16), p.name, items.filter((i) => isOpen(i) && !i.checked && i.for === p.id).length,
-      page === 'list' && personFilter === p.id, () => go('list', () => { personFilter = p.id; ls.set('person', personFilter); }))),
+    peopleList().map((p) => nav(personBadge(p, 16), p.name, personCount(p, items),
+      page === 'list' && personFilter === p.id, () => go('list', () => showPerson(p)))),
     h('div', { class: 'grouptitle' }, 'Egyéb'),
     // a lista és a kosár fent, a nézeteknél van; a többi a beállított sorrendben
     navOrder().filter((n) => n.key !== 'list' && n.key !== 'cart').map((n) =>
@@ -403,7 +409,7 @@ function fmtWhen(ts, withRel = true) {
   const rel = s < 60 ? 'épp most' : s < 3600 ? Math.round(s / 60) + ' perce' : s < 86400 ? Math.round(s / 3600) + ' órája' : '';
   return day + ' ' + t + (withRel && rel ? ' (' + rel + ')' : '');
 }
-const TABLE_LABEL = { Items: 'Tétel', Categories: 'Kategória', Stores: 'Bolt', People: 'Címzett', Views: 'Nézet', Templates: 'Sablon', TemplateItems: 'Sablontétel', Products: 'Termék' };
+const TABLE_LABEL = { Items: 'Tétel', Categories: 'Kategória', Stores: 'Bolt', People: 'Címzett', Views: 'Nézet', Templates: 'Sablon', TemplateItems: 'Sablontétel', Products: 'Termék', Units: 'Mennyiség' };
 
 function accountView() {
   const st = sync.getStatus();
@@ -474,7 +480,7 @@ function accountView() {
 function syncLogSection(info, KIND) {
   if (!info.log.length) return null;
   const secs = (ms) => (ms / 1000).toLocaleString('hu-HU', { maximumFractionDigits: 1 }) + ' mp';
-  const okRuns = info.log.filter((e) => e.kind === 'ok' || e.kind === 'same' || e.kind === 'fix');
+  const okRuns = info.log.filter((e) => sync.isOkRun(e.kind));
   const avg = okRuns.length ? secs(okRuns.reduce((s, e) => s + e.ms, 0) / okRuns.length) : '–';
   return h('section', { class: 'sec' },
     h('div', { class: 'sechead' }, h('span', {}, 'Szinkron napló'), h('span', { class: 'count' }, info.log.length)),
@@ -483,7 +489,7 @@ function syncLogSection(info, KIND) {
       h('thead', {}, h('tr', {}, ['Időpont', 'Eredmény', 'Küldött', 'Kapott', 'Idő'].map((t, i) => h('th', { class: i > 1 ? 'num' : '' }, t)))),
       h('tbody', {}, info.log.map((e) => h('tr', {},
         h('td', { class: 'nowrap' }, fmtWhen(e.at, false)),
-        h('td', { class: e.kind === 'ok' || e.kind === 'same' ? '' : 'bad' }, (KIND[e.kind] || e.kind) + (e.full ? ' (teljes)' : '') + (e.err ? ' – ' + e.err : '')),
+        h('td', { class: sync.isOkRun(e.kind) ? '' : 'bad' }, (KIND[e.kind] || e.kind) + (e.full ? ' (teljes)' : '') + (e.err ? ' – ' + e.err : '')),
         h('td', { class: 'num' }, e.sent), h('td', { class: 'num' }, e.recv), h('td', { class: 'num' }, secs(e.ms))))))));
 }
 
@@ -520,15 +526,21 @@ function itemWhere(it) {
   return [it.for && it.for !== me() ? personName(it.for) : '', it.stores.map(storeName).filter(Boolean).join(', ')].filter(Boolean).join(' · ');
 }
 
+/** A már meglévő sor felvillantása (dupla felvételnél). */
+function flashRow(id) {
+  for (const e of document.querySelectorAll(`[data-row="${CSS.escape(id)}"]`)) {
+    e.classList.add('flash');
+    setTimeout(() => e.classList.remove('flash'), 1600);
+  }
+}
+
 /** Ha már van ugyanilyen tétel (név + címzett + bolt), szól és nem vesz fel újat. -> true, ha duplikátum volt */
 function rejectDuplicate(item) {
   const dup = findDuplicate(store.list('Items'), item);
   if (!dup) return false;
   const sum = item.qty ? addQty(dup, item) : null;
   const where = itemWhere(dup);
-  lastAddedId = dup.id;           // a meglévő sor felvillan
-  render();
-  setTimeout(() => { lastAddedId = null; document.querySelectorAll('.just-added').forEach((e) => e.classList.remove('just-added')); }, 1600);
+  flashRow(dup.id);
   toast(`„${dup.name}” már ${dup.checked ? 'a kosárban' : 'a listán'} van${where ? ' (' + where + ')' : ''}`,
     sum ? { label: '+' + formatQty(item.qty, item.unit), fn: () => saveItem({ ...dup, qty: sum }) } : null);
   return true;
@@ -536,15 +548,13 @@ function rejectDuplicate(item) {
 
 async function addItem(item, label) {
   if (rejectDuplicate(item)) return false;
-  lastAddedId = item.id;
   await saveItem(item);
   learnProduct(item, false);
   const visible = Object.values(sectionsFor(currentView())).some((l) => l.some((i) => i.id === item.id));
   const q = formatQty(item.qty, item.unit);
   let msg = `„${label || item.name}”${q ? ' (' + q + ')' : ''} hozzáadva`;
   if (!visible) msg += ' – ebben a nézetben nem látszik';
-  toast(msg, { label: 'Visszavonás', fn: () => store.remove('Items', item, authEmail()).then(() => sync.localChanged()) });
-  setTimeout(() => { lastAddedId = null; document.querySelectorAll('.just-added').forEach((e) => e.classList.remove('just-added')); }, 1600);
+  toast(msg, { label: 'Visszavonás', fn: () => removeRow('Items', item) });
   return true;
 }
 
@@ -574,8 +584,9 @@ function quickAdd(view) {
     if (q) chips.push(h('span', { class: 'tag' }, q));
     const reject = (id) => h('button', { type: 'button', class: 'x', 'aria-label': 'Nem ezt értettem', title: 'Nem ezt értettem – maradjon a név része',
       onclick: () => { smartIgnore.add(id); refresh(); input.focus(); } }, icon('x', 12));
-    if (p.store) { const s = storeById(p.store); chips.push(h('span', { class: 'tag' }, catDot(s && s.color), storeName(p.store), reject(p.store))); }
-    if (p.person) { const pp = personById(p.person); chips.push(h('span', { class: 'tag person', style: pp && safeColor(pp.color) ? '--c:' + pp.color : null }, icon(personIconName(pp), 12), personName(p.person), reject(p.person))); }
+    const st = p.store && storeTag(p.store, reject(p.store));
+    if (st) chips.push(st);
+    if (p.person) chips.push(personTag(p.person, reject(p.person)));
     preview.replaceChildren(...(chips.length && p.name ? [h('span', { class: 'smartname' }, '„' + p.name + '”'), ...chips] : []));
   }
   const add = async () => {
@@ -667,27 +678,28 @@ function tintBadge(iconName, color, size) {
 const catBadge = (cat, size = 16) => tintBadge(catIconName(cat), cat && cat.color, size);
 const storeBadge = (s, size = 16) => tintBadge('store', s && s.color, size);
 const personBadge = (p, size = 16) => tintBadge(personIconName(p), p && p.color, size);
-function storeTag(id) {
+function storeTag(id, ...extra) {
   const s = storeById(id);
   if (!s || s.deleted) return null;
-  return h('span', { class: 'tag' }, catDot(s.color), s.name);
+  return h('span', { class: 'tag' }, catDot(s.color), s.name, ...extra);
 }
-/** Választható színek (a mintaadatok színeivel összhangban). */
+/** Választható színek a kategóriákhoz, boltokhoz, címzettekhez. */
 const SWATCHES = ['#43a047', '#2e7d32', '#00897b', '#5bb5c9', '#4a90c2', '#6a7fd1', '#8e5cc4', '#b05fa8',
   '#d4007a', '#c2554d', '#e1251b', '#ef8a2c', '#c98a3b', '#a68a64', '#7d8a7f', '#455a64'];
-/** Címzett-címke (a saját tételeimnél nem jelenik meg). */
-function forTag(it) {
-  if (!it.for || it.for === me()) return null;
-  const p = personById(it.for);
-  const t = h('span', { class: 'tag person' }, icon(personIconName(p), 12), personName(it.for));
+/** Címzett-címke ikonnal és a címzett színével; opcionálisan további elemekkel (pl. × gomb az előnézetben). */
+function personTag(id, ...extra) {
+  const p = personById(id);
+  const t = h('span', { class: 'tag person' }, icon(personIconName(p), 12), personName(id), ...extra);
   const c = safeColor(p && p.color);
   if (c) t.style.setProperty('--c', c);
   return t;
 }
+/** Címzett-címke a tételsoron (a saját tételeimnél nem jelenik meg). */
+const forTag = (it) => (!it.for || it.for === me() ? null : personTag(it.for));
 /** Kattintható bolt-címkék: koppintásra a bolt-gyorsválasztó nyílik. Üresen (asztalon) „bárhol”. */
 // A gyorsválasztók `save(patch)` paramétere: alapból a listatételt menti; sablontételnél a sablon írja felül.
 function storeTags(it, showEmpty, save) {
-  const tags = it.stores.map(storeTag).filter(Boolean);
+  const tags = it.stores.map((id) => storeTag(id)).filter(Boolean);
   if (!tags.length && !showEmpty) return null;
   return h('button', { type: 'button', class: 'tagbtn', title: 'Bolt módosítása', 'aria-label': 'Bolt módosítása: ' + it.name,
     onclick: (e) => { e.stopPropagation(); openStorePicker(it, save); } }, tags.length ? tags : h('span', { class: 'muted' }, 'bárhol'));
@@ -702,7 +714,7 @@ function forTagBtn(it, showEmpty, save) {
 const itemSaver = (it, save) => save || ((patch) => saveItem({ ...it, ...patch }));
 const catOf = (it, catList) => catList.find((c) => c.id === it.category);
 // „Egy listában” módban a máshol szokásos tétel halványabb, mint a külön szakaszban
-const rowClass = (it, o) => [it.urgent ? 'urgent' : '', o.dim || (o.secOf && o.secOf.get(it.id) === 'elsewhere') ? 'dim' : '', it.checked ? 'checked' : '', it.id === lastAddedId ? 'just-added' : ''].filter(Boolean).join(' ');
+const rowClass = (it, o) => [it.urgent ? 'urgent' : '', o.dim || (o.secOf && o.secOf.get(it.id) === 'elsewhere') ? 'dim' : '', it.checked ? 'checked' : ''].filter(Boolean).join(' ');
 const check = (it) => h('input', { type: 'checkbox', checked: it.checked, 'aria-label': it.name + ' kipipálva', onchange: (e) => saveItem({ ...it, checked: e.target.checked }) });
 const flagBtn = (it) => h('button', { class: 'iconbtn flag' + (it.urgent ? ' on' : ''), title: it.urgent ? 'Sürgős (kattints a visszavonáshoz)' : 'Megjelölés sürgősként', 'aria-pressed': it.urgent ? 'true' : 'false',
   onclick: () => saveItem({ ...it, urgent: !it.urgent }) }, icon('flag', 18));
@@ -763,9 +775,24 @@ function tableBody(list, o, catList) {
     tbody));
 }
 
+// ---- Űrlap-segédek (a szerkesztő ablakok közösen használják) ----
+/** Kategória-választó; az utolsó „Egyéb” az ismeretlen / üres kategóriához. */
+const categorySelect = (current, onchange) => h('select', { onchange },
+  cats().map((c) => h('option', { value: c.id, selected: c.id === current }, c.name)),
+  h('option', { value: '', selected: !cats().some((c) => c.id === current) }, 'Egyéb'));
+/** Címzett-választó; emptyLabel = az üres érték felirata. */
+const personSelect = (current, emptyLabel) => h('select', {},
+  h('option', { value: '', selected: !current }, emptyLabel),
+  peopleList().map((p) => h('option', { value: p.id, selected: p.id === current }, p.id === me() ? p.name + ' (én)' : p.name)));
+/** Bolt-jelölőnégyzetek. -> {boxes:[{id, el}], node, get: kijelölt bolt-id-k} */
+function storeChecks(selected, onchange) {
+  const boxes = storesList().map((s) => ({ id: s.id, name: s.name, el: h('input', { type: 'checkbox', checked: selected.includes(s.id), onchange }) }));
+  return { boxes, node: h('div', { class: 'checks' }, boxes.map((b) => h('label', {}, b.el, b.name))), get: () => boxes.filter((b) => b.el.checked).map((b) => b.id) };
+}
+
 // ---- Dialógus-segéd ----
 const coarsePointer = matchMedia('(pointer: coarse)');
-const BUILD = 'v30';   // = a sw.js gyorsítótár-verziója; a Fiók oldalon látszik, hogy az eszközön melyik kód fut
+const BUILD = 'v32';   // = a sw.js gyorsítótár-verziója; a Fiók oldalon látszik, hogy az eszközön melyik kód fut
 function modal(build, cls) {
   const dlg = h('dialog', { class: cls || '' });
   // A natív append a null-t „null”, a tömböt „[object …]” szövegként szúrná be → itt lapítunk és szűrünk.
@@ -788,34 +815,38 @@ function modal(build, cls) {
     if (ok) close();
   });
   document.body.append(dlg);
-  // Érintős eszközön a showModal az első beviteli mezőt fókuszálná (felugrik a billentyűzet). Meglévő adat szerkesztésénél a mező
-  // nem üres → a kezdő fókuszt a címsorra tesszük (autofocus), így a billentyűzet meg sem nyílik. Új, üres mezőnél marad a fókusz.
+  // Érintős eszközön a showModal az első beviteli mezőt fókuszálná, és felugrik a billentyűzet. Ha a mezőben már van adat
+  // (szerkesztés) vagy ez a mennyiség mezője (ott a +/− gombok a fő eszköz), a kezdő fókusz a címsorra kerül (autofocus),
+  // és ha mégis a mezőn landolna, levesszük róla. Új, üres mezőnél marad a fókusz (ott gépelni kell).
   const first = dlg.querySelector('input[type=text], input:not([type]), textarea');
-  const noKeyboard = coarsePointer.matches && first && (first.value || first.classList.contains('qtyval'));
   const title = dlg.querySelector('h3, h2');
-  if (noKeyboard && title) { title.tabIndex = -1; title.setAttribute('autofocus', ''); }
+  const keepKeyboardAway = coarsePointer.matches && first && (first.value || first.classList.contains('qtyval'));
+  if (keepKeyboardAway && title) { title.tabIndex = -1; title.setAttribute('autofocus', ''); }
   dlg.showModal();
-  // Érintős eszközön a böngésző az első mezőt fókuszálja → felugrik a billentyűzet. Meglévő adat szerkesztésénél (a mező nem üres)
-  // levesszük a fókuszt, hogy pl. a mennyiség állításához ne kelljen előbb elrejteni; új, üres mezőnél marad (ott gépelni kell).
-  const a = document.activeElement;
-  if (coarsePointer.matches && a && dlg.contains(a) && a.matches('input[type=text], input:not([type]), textarea') && (a.value || a.classList.contains('qtyval'))) a.blur();   // a mennyiség mezője mindig: ott a +/− gombok a fő eszköz
+  if (keepKeyboardAway && document.activeElement === first) first.blur();
   return close;
+}
+
+/** Mértékegység-választó gombsor (a Kezelés → Mennyiségek lista szerint). -> {node, get} */
+function unitPicker(current) {
+  let u = current || '';
+  const btns = [{ id: '' }, ...UNITS].map((x) => {
+    const b = h('button', { type: 'button', class: 'chip small' + (x.id === u ? ' active' : ''), onclick: () => { u = x.id; btns.forEach((y) => y.classList.toggle('active', y === b)); } }, x.id || 'nincs');
+    return b;
+  });
+  return { node: h('div', { class: 'units' }, btns), get: () => u };
 }
 
 /** Mennyiség + egység szerkesztő (gombokkal léptethető). Visszaadja a {qty, unit} lekérdezőt és a DOM-ot. */
 function qtyControl(qty, unit) {
-  let u = unit || '';
+  const units = unitPicker(unit);
   const val = h('input', { type: 'text', inputMode: 'decimal', class: 'qtyval', value: qty ? formatQty(qty, '').replace(/\s/g, '') : '', placeholder: '–', 'aria-label': 'Mennyiség', maxLength: 12 });
-  const read = () => { const s = val.value.trim().replace(',', '.'); return s; };
+  const read = () => val.value.trim().replace(',', '.');
   const set = (s) => { val.value = s ? formatQty(s, '').replace(/\s/g, '') : ''; };
-  const minus = h('button', { type: 'button', class: 'stepbtn', 'aria-label': 'Kevesebb', onclick: () => set(stepQty(read(), u, -1)) }, icon('minus', 22));
-  const plus = h('button', { type: 'button', class: 'stepbtn', 'aria-label': 'Több', onclick: () => set(stepQty(read(), u, 1)) }, icon('plus', 22));
-  const unitBtns = [{ id: '' }, ...UNITS].map((x) => {
-    const b = h('button', { type: 'button', class: 'chip small' + (x.id === u ? ' active' : ''), onclick: () => { u = x.id; unitBtns.forEach((y) => y.classList.toggle('active', y === b)); } }, x.id || 'nincs');
-    return b;
-  });
-  const node = h('div', { class: 'qtyctl' }, h('div', { class: 'stepper' }, minus, val, plus), h('div', { class: 'units' }, unitBtns));
-  return { node, get: () => ({ qty: read(), unit: u }) };
+  const minus = h('button', { type: 'button', class: 'stepbtn', 'aria-label': 'Kevesebb', onclick: () => set(stepQty(read(), units.get(), -1)) }, icon('minus', 22));
+  const plus = h('button', { type: 'button', class: 'stepbtn', 'aria-label': 'Több', onclick: () => set(stepQty(read(), units.get(), 1)) }, icon('plus', 22));
+  const node = h('div', { class: 'qtyctl' }, h('div', { class: 'stepper' }, minus, val, plus), units.node);
+  return { node, get: () => ({ qty: read(), unit: units.get() }) };
 }
 
 /** Gyors mennyiség-állítás a listából. */
@@ -883,24 +914,22 @@ function openEditor(item, view) {
     let touched = false;   // a felhasználó kézzel állított-e kategóriát/boltot (akkor nem írjuk felül előtöltéssel)
     const f = {
       name: h('input', { type: 'text', value: it.name, maxLength: 200 }),
-      category: h('select', { onchange: () => { touched = true; } }, cats().map((c) => h('option', { value: c.id, selected: c.id === it.category }, c.name)),
-        h('option', { value: '', selected: !cats().some((c) => c.id === it.category) }, 'Egyéb')),
-      forWho: h('select', {}, h('option', { value: '', selected: !it.for }, 'közös (háztartás)'),
-        peopleList().map((p) => h('option', { value: p.id, selected: p.id === it.for }, p.id === me() ? p.name + ' (én)' : p.name))),
+      category: categorySelect(it.category, () => { touched = true; }),
+      forWho: personSelect(it.for, 'közös (háztartás)'),
       urgent: h('input', { type: 'checkbox', checked: it.urgent }),
       note: h('textarea', { rows: 2, maxLength: 500, value: it.note }),
     };
     let ctl = qtyControl(it.qty, it.unit);
     const qtyWrap = h('div', {}, ctl.node);
     const errMsg = h('p', { class: 'err', role: 'alert' });
-    const boxes = storesList().map((s) => ({ id: s.id, el: h('input', { type: 'checkbox', checked: it.stores.includes(s.id), onchange: () => { touched = true; } }), name: s.name }));
+    const stores = storeChecks(it.stores, () => { touched = true; });
     // Új tételnél a név alapján előtöltjük a korábbi kategóriát, egységet, boltokat.
     if (isNew) f.name.addEventListener('change', () => {
       const prev = remembered(f.name.value);
       if (!prev || touched) return;
       if (cats().some((c) => c.id === prev.category)) f.category.value = prev.category;
       if (!ctl.get().qty && prev.unit) { ctl = qtyControl('', prev.unit); qtyWrap.replaceChildren(ctl.node); }
-      if (!defaultStoresForView(view || currentView()).length) boxes.forEach((b) => { b.el.checked = prev.stores.includes(b.id); });
+      if (!defaultStoresForView(view || currentView()).length) stores.boxes.forEach((b) => { b.el.checked = prev.stores.includes(b.id); });
     });
     dlg.append(
       h('h3', {}, isNew ? 'Új tétel' : 'Tétel szerkesztése'),
@@ -908,13 +937,13 @@ function openEditor(item, view) {
       h('label', { class: 'f' }, 'Mennyiség'), qtyWrap,
       h('label', { class: 'f' }, 'Kategória'), f.category,
       h('label', { class: 'f' }, 'Boltok (üres = bárhol megvehető)'),
-      h('div', { class: 'checks' }, boxes.map((b) => h('label', {}, b.el, b.name))),
+      stores.node,
       h('label', { class: 'f' }, 'Címzett'), f.forWho,
       h('label', { class: 'sw' }, f.urgent, 'Sürgős'),
       h('label', { class: 'f' }, 'Megjegyzés'), f.note,
       h('div', { class: 'actions' },
         isNew ? null : h('button', { class: 'btn danger', onclick: async () => {
-          await store.remove('Items', it, authEmail()); sync.localChanged(); close();
+          await removeRow('Items', it); close();
           toast(`„${it.name}” törölve`, { label: 'Visszavonás', fn: () => saveItem({ ...it, deleted: false }) });
         } }, 'Törlés'),
         h('button', { class: 'btn', onclick: close }, 'Mégse'),
@@ -923,7 +952,7 @@ function openEditor(item, view) {
           if (!name) { f.name.focus(); return; }
           const q = ctl.get();
           const next = { ...it, name, qty: q.qty, unit: q.qty ? q.unit : '', note: f.note.value.trim(), category: f.category.value,
-            stores: boxes.filter((b) => b.el.checked).map((b) => b.id), for: f.forWho.value, urgent: f.urgent.checked };
+            stores: stores.get(), for: f.forWho.value, urgent: f.urgent.checked };
           // ugyanilyen (név + címzett + bolt) tétel már van → nem mentjük, szólunk az ablakban
           const dup = !next.deleted && !(next.bought_at > 0) && findDuplicate(store.list('Items'), next);
           if (dup) {
@@ -1031,7 +1060,7 @@ function openJournalItem(it) {
       h('div', { class: 'actions', style: 'justify-content:flex-start' },
         h('button', { class: 'btn primary', onclick: () => { close(); readd(it); } }, icon('plus', 18), 'Újra a listára'),
         h('button', { class: 'btn', onclick: async () => { close(); await saveItem({ ...it, bought_at: 0, bought_store: '' }); toast('Visszakerült a kosárba'); } }, icon('undo', 18), 'Mégsem vettem meg'),
-        h('button', { class: 'btn danger', onclick: async () => { close(); await store.remove('Items', it, authEmail()); sync.localChanged(); toast('Törölve a naplóból'); } }, icon('trash', 18), 'Törlés')),
+        h('button', { class: 'btn danger', onclick: async () => { close(); await removeRow('Items', it); toast('Törölve a naplóból'); } }, icon('trash', 18), 'Törlés')),
       h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: close }, 'Bezár')));
   }, 'compact');
 }
@@ -1082,7 +1111,7 @@ function templateView() {
         h('div', { class: 'cell', onclick: () => openTemplateItem(ti) }, h('div', { class: 'name' }, ti.name), meta.length ? h('div', { class: 'meta' }, meta) : null),
         qtyBtn(ti, saveTI(ti)),
         h('button', { class: 'iconbtn', title: 'Törlés a sablonból', 'aria-label': ti.name + ' törlése a sablonból',
-          onclick: async () => { await store.remove('TemplateItems', ti, authEmail()); sync.localChanged(); toast(`„${ti.name}” törölve a sablonból`, { label: 'Visszavonás', fn: () => saveRow('TemplateItems', { ...ti, deleted: false }) }); } },
+          onclick: async () => { await removeRow('TemplateItems', ti); toast(`„${ti.name}” törölve a sablonból`, { label: 'Visszavonás', fn: () => saveRow('TemplateItems', { ...ti, deleted: false }) }); } },
         icon('x', 18)));
     })) : h('div', { class: 'empty' }, 'Még üres. Írd be fent a tételeket – a mennyiség, bolt és címzett is megadható egy sorban.'));
 }
@@ -1091,13 +1120,11 @@ function templateView() {
 function openTemplateItem(ti) {
   modal((dlg, close) => {
     const name = h('input', { type: 'text', value: ti.name, maxLength: 200 });
-    const category = h('select', {}, cats().map((c) => h('option', { value: c.id, selected: c.id === ti.category }, c.name)),
-      h('option', { value: '', selected: !cats().some((c) => c.id === ti.category) }, 'Egyéb'));
-    let ctl = qtyControl(ti.qty, ti.unit);
+    const category = categorySelect(ti.category);
+    const ctl = qtyControl(ti.qty, ti.unit);
     dlg.append(
       h('h3', {}, 'Sablontétel'),
       h('label', { class: 'f' }, 'Név'), name,
-      step ? h('div', {}, h('label', { class: 'f' }, 'Lépésköz (a + / − gombnál)'), step) : null,
       h('label', { class: 'f' }, 'Mennyiség'), ctl.node,
       h('label', { class: 'f' }, 'Kategória'), category,
       h('p', { class: 'muted small' }, 'A boltot és a címzettet a tétel címkéire koppintva állíthatod.'),
@@ -1193,11 +1220,10 @@ function openSaveAsTemplate(items, suggestedName) {
   if (!items.length) { toast('Nincs tétel, amiből sablon készülhetne'); return; }
   modal((dlg, close) => {
     const name = h('input', { type: 'text', value: suggestedName || '', maxLength: 100, placeholder: 'pl. Havi nagybevásárlás' });
-    const forSel = h('select', {}, h('option', { value: '' }, 'tételenként / a felvevő'),
-      peopleList().map((p) => h('option', { value: p.id }, p.id === me() ? p.name + ' (én)' : p.name)));
+    const forSel = personSelect('', 'tételenként / a felvevő');
     dlg.append(
       h('h3', {}, 'Mentés sablonként'),
-      h('p', { class: 'muted' }, `${new Set(items.map((i) => i.name.trim().toLocaleLowerCase('hu'))).size} tétel kerül a sablonba (mennyiséggel, bolttal, címzettel).`),
+      h('p', { class: 'muted' }, `${new Set(items.map((i) => nameKey(i.name))).size} tétel kerül a sablonba (mennyiséggel, bolttal, címzettel).`),
       h('label', { class: 'f' }, 'Sablon neve'), name,
       h('label', { class: 'f' }, 'Alapértelmezett címzett'), forSel,
       h('div', { class: 'actions' },
@@ -1242,10 +1268,8 @@ const productCatOf = (p, catIds) => (catIds.has(p.category) ? p.category : '__no
 function productsView() {
   const all = live('Products');
   const catIds = new Set(cats().map((c) => c.id));
-  const q = productQuery.trim().toLocaleLowerCase('hu');
-  const norm = (s) => String(s).toLocaleLowerCase('hu').normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const nq = norm(q);
-  const list = all.filter((p) => (!nq || norm(p.name).includes(nq) || norm(p.keywords).includes(nq))
+  const nq = normText(productQuery);
+  const list = all.filter((p) => (!nq || normText(p.name).includes(nq) || normText(p.keywords).includes(nq))
     && (!productCat || productCatOf(p, catIds) === productCat)).sort(byName);
   const countIn = (id) => all.filter((p) => productCatOf(p, catIds) === id).length;
   const catChips = h('div', { class: 'chips' },
@@ -1268,7 +1292,7 @@ function productsView() {
       h('div', { class: 'cathead' }, catBadge(g, 14), g.name, h('span', { class: 'n' }, g.items.length)),
       g.items.map((p) => h('div', { class: 'row', onclick: () => openProductEditor(p) },
         h('div', { class: 'cell' }, h('div', { class: 'name' }, p.name),
-          h('div', { class: 'meta' }, [p.unit ? h('span', {}, p.unit) : null, ...p.stores.map(storeTag), p.keywords ? h('span', { class: 'note' }, p.keywords) : null].filter(Boolean))),
+          h('div', { class: 'meta' }, [p.unit ? h('span', {}, p.unit) : null, ...p.stores.map((id) => storeTag(id)), p.keywords ? h('span', { class: 'note' }, p.keywords) : null].filter(Boolean))),
         h('button', { class: 'iconbtn', title: 'Felvétel a listára', 'aria-label': p.name + ' felvétele a listára',
           onclick: (e) => { e.stopPropagation(); addItem(newItemFrom(p.name, '', p.unit, currentView())); } }, icon('plus', 18)))),
     ])) : h('div', { class: 'empty' }, 'Nincs találat.'));
@@ -1280,27 +1304,21 @@ function openProductEditor(p) {
   modal((dlg, close) => {
     const name = h('input', { type: 'text', value: base.name, maxLength: 200 });
     const kw = h('input', { type: 'text', value: base.keywords, maxLength: 300, placeholder: 'pl. krumpli, pityóka' });
-    const category = h('select', {}, cats().map((c) => h('option', { value: c.id, selected: c.id === base.category }, c.name)),
-      h('option', { value: '', selected: !cats().some((c) => c.id === base.category) }, 'Egyéb'));
-    let unit = base.unit || '';
-    const unitBtns = [{ id: '' }, ...UNITS].map((x) => {
-      const b = h('button', { type: 'button', class: 'chip small' + (x.id === unit ? ' active' : ''), onclick: () => { unit = x.id; unitBtns.forEach((y) => y.classList.toggle('active', y === b)); } }, x.id || 'nincs');
-      return b;
-    });
-    const boxes = storesList().map((s) => ({ id: s.id, el: h('input', { type: 'checkbox', checked: base.stores.includes(s.id) }), name: s.name }));
+    const category = categorySelect(base.category);
+    const units = unitPicker(base.unit);
+    const stores = storeChecks(base.stores);
     const err = h('p', { class: 'err', role: 'alert' });
     dlg.append(
       h('h3', {}, isNew ? 'Új termék' : 'Termék szerkesztése'),
       h('label', { class: 'f' }, 'Név'), name,
-      step ? h('div', {}, h('label', { class: 'f' }, 'Lépésköz (a + / − gombnál)'), step) : null,
       h('label', { class: 'f' }, 'Más nevek / keresőszavak (vesszővel)'), kw,
       h('label', { class: 'f' }, 'Kategória'), category,
-      h('label', { class: 'f' }, 'Szokásos egység'), h('div', { class: 'units' }, unitBtns),
-      h('label', { class: 'f' }, 'Alapbolt (ha még nincs előzmény)'), h('div', { class: 'checks' }, boxes.map((b) => h('label', {}, b.el, b.name))),
+      h('label', { class: 'f' }, 'Szokásos egység'), units.node,
+      h('label', { class: 'f' }, 'Alapbolt (ha még nincs előzmény)'), stores.node,
       h('div', { class: 'actions' },
         isNew ? null : h('button', { class: 'btn danger', onclick: async () => {
           if (!confirm(`Törlöd a terméklistából: „${base.name}”? (A listán lévő tételek maradnak.)`)) return;
-          await store.remove('Products', base, authEmail()); sync.localChanged(); close();
+          await removeRow('Products', base); close();
         } }, 'Törlés'),
         h('button', { class: 'btn', onclick: close }, 'Mégse'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -1308,8 +1326,8 @@ function openProductEditor(p) {
           if (!n) { name.focus(); return; }
           const other = findProduct(store.list('Products').filter((x) => x.id !== base.id), n);
           if (other) { err.textContent = `Már van ilyen termék: „${other.name}”.`; return; }
-          const next = { ...base, name: n, keywords: kw.value.split(',').map((s) => s.trim()).filter(Boolean).join(', '), category: category.value, unit,
-            stores: boxes.filter((b) => b.el.checked).map((b) => b.id) };
+          const next = { ...base, name: n, keywords: kw.value.split(',').map((s) => s.trim()).filter(Boolean).join(', '), category: category.value, unit: units.get(),
+            stores: stores.get() };
           if (isNew) next.id = 'p-' + slug(n, new Set(store.list('Products').map((x) => x.id.replace(/^p-/, ''))));
           await saveRow('Products', next);
           close();
@@ -1389,8 +1407,7 @@ function openManageEditor(tab, row) {
     // Szín: előre megadott árnyalatok + egyéni választó. Az aktuális értéket a `chosen` tartja.
     let chosen = safeColor(base.color, SWATCHES[0]);
     let chosenIcon = tab === 'categories' ? catIconName(base) : tab === 'people' ? personIconName(base) : tab === 'templates' ? templateIconName(base) : '';
-    const forSel = tab === 'templates' ? h('select', {}, h('option', { value: '', selected: !base.for }, 'tételenként / a felvevő'),
-      peopleList().map((p) => h('option', { value: p.id, selected: p.id === base.for }, p.id === me() ? p.name + ' (én)' : p.name))) : null;
+    const forSel = tab === 'templates' ? personSelect(base.for, 'tételenként / a felvevő') : null;
     const preview = hasLook ? h('span', { class: 'preview' }) : null;
     const paintPreview = () => { if (preview) preview.replaceChildren(badgeFor(chosen, chosenIcon), name.value.trim() || 'Előnézet'); };
     name.addEventListener('input', paintPreview);
@@ -1408,7 +1425,7 @@ function openManageEditor(tab, row) {
       return b;
     });
     const markIc = () => iconBtns.forEach((b) => b.classList.toggle('on', b.dataset.n === chosenIcon));
-    const boxes = tab === 'views' ? storesList().map((s) => ({ id: s.id, el: h('input', { type: 'checkbox', checked: base.stores.includes(s.id) }), name: s.name })) : [];
+    const stores = tab === 'views' ? storeChecks(base.stores) : null;
     const sw = (label, v) => { const el = h('input', { type: 'checkbox', checked: v }); return { el, node: h('label', { class: 'sw' }, el, label) }; };
     const s1 = tab === 'views' ? sw('Bolt nélküli tételek is látszanak', base.include_unassigned) : null;
     const s2 = tab === 'views' ? sw('Máshol szokásos tételek is látszanak (halványan)', base.show_others) : null;
@@ -1426,7 +1443,7 @@ function openManageEditor(tab, row) {
       hasLook ? h('div', {}, h('label', { class: 'f' }, 'Szín'), h('div', { class: 'swatches' }, swatchBtns, custom)) : null,
       preview ? h('div', { class: 'previewrow' }, preview) : null,
       tab === 'views' ? h('div', {}, h('label', { class: 'f' }, 'Boltok, ahol ezt a nézetet használod'),
-        h('div', { class: 'checks' }, boxes.map((b) => h('label', {}, b.el, b.name))), s1.node, s2.node, s3.node, s4.node) : null,
+        stores.node, s1.node, s2.node, s3.node, s4.node) : null,
       h('div', { class: 'actions' },
         h('button', { class: 'btn', onclick: close }, 'Mégse'),
         h('button', { class: 'btn primary', onclick: async () => {
@@ -1449,7 +1466,7 @@ function openManageEditor(tab, row) {
           if (icons) next.icon = chosenIcon;
           if (forSel) next.for = forSel.value;
           if (tab === 'views') {
-            next.stores = boxes.filter((b) => b.el.checked).map((b) => b.id);
+            next.stores = stores.get();
             next.include_unassigned = s1.el.checked; next.show_others = s2.el.checked; next.show_people = s3.el.checked; next.merged = s4.el.checked;
           }
           await saveRow(m.table, next);
@@ -1551,6 +1568,8 @@ const dataOwner = () => store.getMeta('owner', null) || (sync.getAuth() || {}).e
 
 async function logout() {
   if (store.pendingCount() && !confirm(`${store.pendingCount()} még el nem küldött változás elvész. Biztosan kijelentkezel?`)) return;
+  const auth = sync.getAuth();
+  if (auth) await Promise.race([backend.logout(auth.token), new Promise((r) => setTimeout(r, 2500))]);   // a szerveroldali munkamenet is lezárul (offline: nem várunk rá)
   await store.wipeData();
   await clearUserTraces();
   location.reload();
@@ -1573,11 +1592,15 @@ function loadGsi(box) {
     window.google.accounts.id.renderButton(box, { theme: 'outline', size: 'large', locale: 'hu' });
   };
   if (window.google && window.google.accounts) return init();
-  const s = document.createElement('script');
-  s.src = 'https://accounts.google.com/gsi/client';
-  s.async = true; s.onload = init;
-  s.onerror = () => { document.getElementById('loginmsg').textContent = 'A Google bejelentkezés most nem érhető el (offline?).'; };
-  document.head.append(s);
+  // a belépő oldal többször is újrarajzolódhat: a Google-szkriptet csak egyszer töltjük be
+  let s = document.getElementById('gsi-script');
+  if (!s) {
+    s = document.createElement('script');
+    s.id = 'gsi-script'; s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+    document.head.append(s);
+  }
+  s.addEventListener('load', init);
+  s.addEventListener('error', () => { const m = document.getElementById('loginmsg'); if (m) m.textContent = 'A Google bejelentkezés most nem érhető el (offline?).'; });
 }
 
 async function doLogin(idToken) {
@@ -1621,4 +1644,7 @@ async function main() {
   sync.startTriggers();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-main();
+main().catch((e) => {   // pl. a böngésző tiltja a helyi tárat (privát mód): ne maradjon üres oldal
+  console.error('indulási hiba', e);
+  $app.textContent = 'Az alkalmazás nem indult el. Ellenőrizd, hogy a böngésző engedi a helyi tárolást (nem privát ablak), és töltsd újra az oldalt.';
+});

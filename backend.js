@@ -55,3 +55,9 @@ export async function sync(token, since, changes, version = '', counts = null) {
   if (!res.ok) throw new Error('http_' + res.status);
   return res.json();
 }
+
+/** Kijelentkezés: a szerveroldali munkamenet (refresh token) érvénytelenítése. Hibája nem akadályozza a helyi kijelentkezést. */
+export async function logout(token) {
+  if (!useSb() || !token) return;
+  try { await sbFetch('/auth/v1/logout?scope=local', {}, token); } catch { /* offline: a helyi törlés így is megtörténik */ }
+}

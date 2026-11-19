@@ -179,7 +179,7 @@ const str = (v) => (v == null ? '' : String(v));
 // ismert egység: a kanonikus név; ismeretlen (pl. már törölt egyéni egység): marad a szöveg, hogy ne vesszen el
 const unitOf = (u) => normUnit(u) || str(u).trim();
 
-export function fromWire(t, w) {
+function fromWire(t, w) {
   const r = { ...w };
   r.id = str(w.id);
   r.updated_at = Number(w.updated_at) || 0;

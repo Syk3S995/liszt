@@ -1,7 +1,7 @@
 // Tiszta nézetlogika – nincs DOM, nincs IndexedDB, így egyszerűen tesztelhető.
 
 /** A tétel a bejelentkezett felhasználóé / közös? (üres „kinek” vagy saját személy) */
-export function isOwn(item, me) {
+function isOwn(item, me) {
   return !item.for || item.for === me;
 }
 
@@ -31,7 +31,7 @@ export function categoryOrder(categories) {
 const idx = (order, cat) => (order && order.has(cat) ? order.get(cat) : Number.MAX_SAFE_INTEGER);
 
 /** sürgős → kategória-sorrend → név */
-export function compareItems(a, b, order) {
+function compareItems(a, b, order) {
   if (!!a.urgent !== !!b.urgent) return a.urgent ? -1 : 1;
   const ia = idx(order, a.category), ib = idx(order, b.category);
   if (ia !== ib) return ia < ib ? -1 : 1;
@@ -128,7 +128,7 @@ export function renumber(list, from, to) {
 // ---------- Mennyiség és egység ----------
 
 /** Mértékegységek és a léptetés lépésköze. */
-export const DEFAULT_UNITS = [
+const DEFAULT_UNITS = [
   { id: 'db', step: 1 }, { id: 'kg', step: 0.5 }, { id: 'dkg', step: 10 }, { id: 'g', step: 100 },
   { id: 'l', step: 0.5 }, { id: 'dl', step: 1 }, { id: 'csomag', step: 1 }, { id: 'doboz', step: 1 }, { id: 'üveg', step: 1 },
   { id: 'karton', step: 1 },
@@ -137,14 +137,14 @@ const BASE_ALIASES = { darab: 'db', kiló: 'kg', kilo: 'kg', deka: 'dkg', dag: '
 const NUM = '(\\d+\\/\\d+|\\d+(?:[.,]\\d+)?)';
 const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export let UNITS = DEFAULT_UNITS;     // a Kezelés → Mennyiségek lapon szerkeszthető; setUnits() cseréli
-let UNIT_ALIASES = {}, UNIT_RE = '', QTY_TOKEN, UNIT_TOKEN, unitsKey = '';
+let UNIT_ALIASES = Object.create(null), UNIT_RE = '', QTY_TOKEN, UNIT_TOKEN, unitsKey = '';
 /** list: [{id: név, step}] – üres lista esetén az alap egységek. A gyors bevitel felismerése is ezt használja. */
 export function setUnits(list) {
   const u = (list && list.length ? list : DEFAULT_UNITS).map((x) => ({ id: String(x.id), step: Number(x.step) > 0 ? Number(x.step) : 1 }));
   const key = JSON.stringify(u);
   if (key === unitsKey) return;
   unitsKey = key; UNITS = u;
-  UNIT_ALIASES = {};
+  UNIT_ALIASES = Object.create(null);   // nem örököl: a „constructor” / „__proto__” nem lehet egység
   for (const [al, id] of Object.entries(BASE_ALIASES)) if (u.some((x) => x.id === id)) UNIT_ALIASES[al] = id;
   for (const x of u) UNIT_ALIASES[x.id.toLocaleLowerCase('hu')] = x.id;
   UNIT_RE = Object.keys(UNIT_ALIASES).sort((x, y) => y.length - x.length).map(esc).join('|');
@@ -156,10 +156,10 @@ setUnits(DEFAULT_UNITS);
 export function normUnit(u) {
   return UNIT_ALIASES[String(u || '').trim().toLocaleLowerCase('hu')] || '';
 }
-export const unitStep = (u) => (UNITS.find((x) => x.id === u) || { step: 1 }).step;
+const unitStep = (u) => (UNITS.find((x) => x.id === u) || { step: 1 }).step;
 
 /** "1/2" -> 0.5, "1,5" -> 1.5, "2" -> 2; egyébként NaN */
-export function parseNum(s) {
+function parseNum(s) {
   const t = String(s ?? '').trim();
   const fr = /^(\d+)\/(\d+)$/.exec(t);
   if (fr) return Number(fr[2]) ? Number(fr[1]) / Number(fr[2]) : NaN;
@@ -356,7 +356,7 @@ export function frequent(items, limit = 8) {
 // ---------- Duplikátumok és terméklista ----------
 
 /** Két tétel „ugyanaz”, ha a neve (kis-nagybetű/ékezet nélkül), a címzettje és a boltjai is egyeznek. */
-export const dupKey = (it) => [normText(it.name), it.for || '', [...(it.stores || [])].sort().join(',')].join('|');
+const dupKey = (it) => [normText(it.name), it.for || '', [...(it.stores || [])].sort().join(',')].join('|');
 
 /** Van-e már ugyanilyen nyitott (nem megvett, nem törölt) tétel a listán? -> a meglévő tétel vagy null */
 export function findDuplicate(items, cand) {

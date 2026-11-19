@@ -4,7 +4,7 @@
 import { CONFIG } from './config.js';
 
 const TOPIC = 'realtime:liszt-meta';
-let ws = null, hb = null, retry = null, delay = 2000, stopped = true, joined = false, opts = null, n = 0;
+let ws = null, hb = null, retry = null, delay = 2000, stopped = true, joined = false, opts = null, n = 0, lastMsg = 0;
 
 export const supported = () => !!CONFIG.SUPABASE_URL && typeof WebSocket !== 'undefined';
 export const connected = () => joined;
@@ -45,9 +45,14 @@ function open() {
         postgres_changes: [{ event: '*', schema: 'public', table: 'meta' }] },
       access_token: token } });
     clearInterval(hb);
-    hb = setInterval(() => send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nextRef() }), 25000);
+    lastMsg = Date.now();
+    hb = setInterval(() => {
+      if (Date.now() - lastMsg > 70000) { try { s.close(); } catch { /* */ } return; }   // csendben elhalt kapcsolat (pl. alvó telefon): zárás -> újracsatlakozás
+      send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: nextRef() });
+    }, 25000);
   };
   s.onmessage = (e) => {
+    lastMsg = Date.now();
     let m; try { m = JSON.parse(e.data); } catch { return; }
     if (m.topic === TOPIC && m.event === 'phx_reply') {
       if (m.payload && m.payload.status === 'ok') { if (!joined) { joined = true; delay = 2000; opts.onState && opts.onState(true); } }
