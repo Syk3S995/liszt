@@ -143,6 +143,7 @@ function render() {
 
   const content = page === 'manage' ? manageView() : page === 'journal' ? journalView() : page === 'template' ? templateView()
     : page === 'account' ? accountView() : listView(view, sec);
+  const rowsBefore = page === 'list' ? captureRows(view, isDesk) : null;   // a tételsorok be-/kilépési animációjához
   $app.replaceChildren(...[
     topbar(isDesk, view),
     h('div', { class: 'layout' }, isDesk ? sidebar(view) : null, h('main', { class: 'content' }, content)),
@@ -150,11 +151,56 @@ function render() {
   ].filter(Boolean));
   revealActiveTabs();
   if (window.scrollY !== scrollY) window.scrollTo(0, scrollY);
+  animateRows(rowsBefore, view, isDesk);
   if (keepQuick) {
     const q = document.getElementById(keepQuick.id);
     if (q) { q.value = keepQuick.v; q.focus({ preventScroll: true }); q.setSelectionRange(keepQuick.s, keepQuick.s);
       // csak a lista mezőjénél kell újraszámolni az előnézetet (a keresőmező input-eseménye újrarajzolna → végtelen ciklus)
       if (keepQuick.id === 'q') q.dispatchEvent(new Event('input')); }
+  }
+}
+
+// ---- Tételsorok animációja: új tétel (helyi vagy másik eszközről) beúszik, a törölt/lezárt kihalványul ----
+// Csak ugyanazon a nézeten belül, és csak kevés sornál (nagy tömeges változásnál – pl. első letöltés – nem animál).
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const rowsKey = (view, isDesk) => [page, view.id, personFilter, isDesk].join('|');
+function captureRows(view, isDesk) {
+  return { key: rowsKey(view, isDesk), els: [...$app.querySelectorAll('[data-row]')] };
+}
+const enterAt = new Map();   // id -> mikor lépett be (újrarajzoláskor a már futó animáció folytatódik, nem indul újra)
+const ENTER_MS = 1700;
+function animateRows(before, view, isDesk) {
+  const now = [...$app.querySelectorAll('[data-row]')];
+  const t = Date.now();
+  if (before && before.key === rowsKey(view, isDesk) && !reduceMotion.matches) {
+    const nowIds = new Set(now.map((e) => e.dataset.row));
+    const prevIds = new Set(before.els.map((e) => e.dataset.row));
+    const entered = now.filter((e) => !prevIds.has(e.dataset.row));
+    const left = before.els.filter((e) => !nowIds.has(e.dataset.row) && !e.classList.contains('leaving'));
+    if (entered.length + left.length <= 12) {
+      for (const e of entered) enterAt.set(e.dataset.row, t);
+      const byId = new Map(now.map((e) => [e.dataset.row, e]));
+      for (const g of left) {
+        const i = before.els.indexOf(g);
+        const prevEl = before.els.slice(0, i).reverse().map((e) => byId.get(e.dataset.row)).find(Boolean);
+        const nextEl = before.els.slice(i + 1).map((e) => byId.get(e.dataset.row)).find(Boolean);
+        if (prevEl) prevEl.after(g); else if (nextEl) nextEl.before(g); else continue;   // nincs hova tenni: nem animáljuk
+        g.classList.add('leaving'); g.setAttribute('aria-hidden', 'true');
+        g.style.setProperty('--h', g.getBoundingClientRect().height + 'px');
+        const done = () => g.remove();
+        g.addEventListener('animationend', done, { once: true });
+        setTimeout(done, 900);
+      }
+    }
+  }
+  for (const [id, at] of enterAt) if (t - at > ENTER_MS) enterAt.delete(id);
+  if (!enterAt.size) return;
+  for (const e of now) {
+    const at = enterAt.get(e.dataset.row);
+    if (at == null) continue;
+    e.style.setProperty('--age', (t - at) + 'ms');
+    e.classList.add('enter');
+    setTimeout(() => e.classList.remove('enter'), ENTER_MS - (t - at));
   }
 }
 
@@ -683,7 +729,7 @@ function mobileBody(list, o, catList) {
       const st = storeTags(it, false); if (st) meta.push(st);
       const f = forTagBtn(it, false); if (f) meta.push(f);
       if (it.note) meta.push(h('span', { class: 'note' }, it.note));
-      card.append(h('div', { class: 'row ck ' + rowClass(it, o) }, check(it),
+      card.append(h('div', { class: 'row ck ' + rowClass(it, o), 'data-row': it.id }, check(it),
         h('div', { class: 'cell', onclick: () => openEditor(it) }, h('div', { class: 'name' }, it.name), meta.length ? h('div', { class: 'meta' }, meta) : null),
         qtyBtn(it),
         flagBtn(it)));
@@ -699,7 +745,7 @@ function tableBody(list, o, catList) {
     if (g.id !== null) tbody.append(h('tr', { class: 'cat' }, h('td', { colspan: cols }, h('div', { class: 'ct' }, catBadge(g, 14), g.name, h('span', { class: 'n' }, g.items.length)))));
     for (const it of g.items) {
       const c = catOf(it, catList);
-      tbody.append(h('tr', { class: 'item ' + rowClass(it, o) },
+      tbody.append(h('tr', { class: 'item ' + rowClass(it, o), 'data-row': it.id },
         h('td', {}, check(it)),
         h('td', { class: 'name', onclick: () => openEditor(it) }, h('div', { class: 'nm' }, it.name), it.note ? h('div', { class: 'muted small' }, it.note) : null),
         h('td', { class: 'q' }, qtyBtn(it)),
@@ -719,6 +765,7 @@ function tableBody(list, o, catList) {
 }
 
 // ---- Dialógus-segéd ----
+const coarsePointer = matchMedia('(pointer: coarse)');
 function modal(build, cls) {
   const dlg = h('dialog', { class: cls || '' });
   // A natív append a null-t „null”, a tömböt „[object …]” szövegként szúrná be → itt lapítunk és szűrünk.
@@ -742,6 +789,10 @@ function modal(build, cls) {
   });
   document.body.append(dlg);
   dlg.showModal();
+  // Érintős eszközön a böngésző az első mezőt fókuszálja → felugrik a billentyűzet. Meglévő adat szerkesztésénél (a mező nem üres)
+  // levesszük a fókuszt, hogy pl. a mennyiség állításához ne kelljen előbb elrejteni; új, üres mezőnél marad (ott gépelni kell).
+  const a = document.activeElement;
+  if (coarsePointer.matches && a && dlg.contains(a) && a.matches('input[type=text], input:not([type]), textarea') && (a.value || a.classList.contains('qtyval'))) a.blur();   // a mennyiség mezője mindig: ott a +/− gombok a fő eszköz
   return close;
 }
 
@@ -1549,8 +1600,16 @@ async function main() {
   // belépés nélkül csak a saját, már letöltött adattal lehet (offline) továbbmenni
   needLogin = backend.enabled() && !sync.getAuth() && (!dataOwner() || !store.list('Items').length);
   store.onChange(render);
-  sync.onStatus(() => {
-    const q = document.activeElement; if (!(q && q.tagName === 'INPUT' && q.id === 'q' && q.value)) render();
+  // Szinkron-állapot változása: általában elég a jelzőgombot cserélni (a lista újrarajzolása megszakítaná a sorok animációját,
+  // és fölösleges); teljes újrarajzolás csak a Fiók oldalon és a bejelentkezési felszólítás ki-/bekapcsolásakor kell.
+  let lastKind = null;
+  sync.onStatus((st) => {
+    const authChange = (st.kind === 'auth') !== (lastKind === 'auth');
+    lastKind = st.kind;
+    const pill = document.querySelector('.topbar .pill');
+    if (page === 'account' || authChange || !pill) {
+      const q = document.activeElement; if (!(q && q.tagName === 'INPUT' && q.id === 'q' && q.value)) render();
+    } else pill.replaceWith(syncPill());
   });
   render();
   sync.startTriggers();
